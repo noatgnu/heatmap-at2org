@@ -88,6 +88,8 @@ export class ExplorerComponent implements OnInit {
   selectedHeatmapProteins = signal<Map<string, GeneData>>(new Map());
   uiRevision = signal<number>(0);
 
+  selectedHeatmapProteinIds = computed(() => new Set(this.selectedHeatmapProteins().keys()));
+
   firstSelectedGene = computed(() => {
     const values = this.selectedHeatmapProteins().values();
     return values.next().value;
@@ -413,9 +415,20 @@ export class ExplorerComponent implements OnInit {
     });
 
     return [...filtered].sort((a: any, b: any) => {
+      const categorization = this.config()?.categorization || [];
+      
       for (const criterion of stack) {
-        if (!a[criterion] || !b[criterion]) continue;
-        const cmp = a[criterion].toString().localeCompare(b[criterion].toString());
+        const cat = categorization.find(c => c.key === criterion);
+        const priorities = cat?.priorities || {};
+        
+        const valA = (a[criterion] || '').toString();
+        const valB = (b[criterion] || '').toString();
+
+        const pA = priorities[valA] || priorities[valA.toUpperCase()] || 99;
+        const pB = priorities[valB] || priorities[valB.toUpperCase()] || 99;
+
+        let cmp = pA - pB;
+        if (cmp === 0) cmp = valA.localeCompare(valB);
         if (cmp !== 0) return cmp;
       }
       return (a.date || '').localeCompare(b.date || '');
@@ -442,7 +455,13 @@ export class ExplorerComponent implements OnInit {
       projects,
       summary: this.calculateHeatmapSummary(projects),
       rankData: this.calculateRankData(projects)
-    }));
+    })).sort((a, b) => {
+      const cat = config.categorization[0];
+      const priorities = cat.priorities || {};
+      const pA = priorities[a.name] || priorities[a.name.toUpperCase()] || 99;
+      const pB = priorities[b.name] || priorities[b.name.toUpperCase()] || 99;
+      return pA - pB;
+    });
   });
 
   private calculateRankData(projects: ProjectMetadata[]): RankItem[] {

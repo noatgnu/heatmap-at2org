@@ -13,21 +13,30 @@
   ],
   "categorization": [
     {
-      "key": "organ",
-      "label": "Organ/Cell Line",
-      "rules": [
-        { "pattern": "AT2", "value": "AT2" }
-      ],
-      "default": "AT2"
+      "key": "experimental_group",
+      "label": "Experimental Group",
+      "rules": [],
+      "default": "AT2org",
+      "priorities": { "AT2org": 1 }
     },
     {
-      "key": "time",
+      "key": "timepoint",
       "label": "Timepoint",
       "rules": [
         { "pattern": "7D", "value": "7D" },
         { "pattern": "14D", "value": "14D" }
       ],
-      "default": "Other"
+      "default": "Other",
+      "priorities": { "7D": 1, "14D": 2 }
+    },
+    {
+      "key": "dose",
+      "label": "Dose",
+      "rules": [
+        { "pattern": "([0-9]+nm)", "useCaptureGroup": true }
+      ],
+      "default": "None",
+      "priorities": { "1NM": 1, "3NM": 2, "10NM": 3, "30NM": 4, "100NM": 5 }
     },
     {
       "key": "treatment",
@@ -36,7 +45,7 @@
         { "pattern": "MLi2", "value": "MLi2" },
         { "pattern": "DMSO", "value": "DMSO" }
       ],
-      "default": "Control"
+      "default": "Other"
     }
   ]
 }
