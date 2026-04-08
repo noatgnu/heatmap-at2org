@@ -264,9 +264,9 @@ export class HeatmapComponent {
         xref: 'paper',
         yref: 'paper',
         xanchor: 'right',
-        text: 'Decrease activity',
+        text: 'Decrease activity when LRRK2<br> is active (higher without treatment)',
         showarrow: false,
-        font: { size: 10, color: 'rgb(5, 48, 97)' }
+        font: { size: 10, color: 'rgb(5, 48, 97)' },
       },
       {
         x: colorbarXEnd,
@@ -275,10 +275,10 @@ export class HeatmapComponent {
         xref: 'paper',
         yref: 'paper',
         xanchor: 'left',
-        text: 'Increase activity',
+        text: 'Increase activity when LRRK2<br> is inactive (higher with treatment)',
         showarrow: false,
-        font: { size: 10, color: 'rgb(103, 0, 31)' }
-      }
+        font: { size: 10, color: 'rgb(103, 0, 31)' },
+      },
     ];
     perGeneSummary.forEach((s, i) => {
       let upText = `↑${s.increase}`;
