@@ -461,6 +461,8 @@ export class ExplorerComponent implements OnInit {
     const flipped = this.flippedProjectIds();
     const selectedIds = this.selectedGeneIds();
     const showOnlySelected = this.showOnlySelectedInRankPlot();
+    const log2fcCut = this.log2fcCutoff();
+    const confCut = this.confidenceCutoff();
     const projIndices = projects.map(p => allProjs.indexOf(p));
     if (projIndices.length === 0) return [];
     const minTotal = Math.ceil(projIndices.length * (this.rankCutoff() / 100));
@@ -473,11 +475,16 @@ export class ExplorerComponent implements OnInit {
         projIndices.forEach(idx => {
           let val = g.log2fcs[idx];
           if (val !== null) {
-            total++;
-            const projId = allProjs[idx].projectId;
-            if (flipped.has(projId)) val *= -1;
-            if (val > 0) increase++;
-            else if (val < 0) decrease++;
+            const conf = g.confidences[idx];
+            const passesConf = confCut === null || confCut <= 0 || (conf !== null && conf >= confCut);
+            const passesLog2fc = log2fcCut === null || log2fcCut <= 0 || Math.abs(val) >= log2fcCut;
+            if (passesConf && passesLog2fc) {
+              total++;
+              const projId = allProjs[idx].projectId;
+              if (flipped.has(projId)) val *= -1;
+              if (val > 0) increase++;
+              else if (val < 0) decrease++;
+            }
           }
         });
         const score = total > 0 ? (increase - decrease) / total : 0;
