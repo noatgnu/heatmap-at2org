@@ -8,7 +8,9 @@
       "nameRow": 0,
       "dataStartRow": 2,
       "experimentStartCol": 5,
-      "stride": 2
+      "stride": 2,
+      "labelIncrease": "Increased level when LRRK2<br> is active (decrease with treatment)",
+      "labelDecrease": "Increased level when LRRK2<br> is inactive (higher with treatment)"
     }
   ],
   "categorization": [
