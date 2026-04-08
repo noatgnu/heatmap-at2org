@@ -9,8 +9,8 @@
       "dataStartRow": 2,
       "experimentStartCol": 5,
       "stride": 2,
-      "labelIncrease": "Protein level decreases<br> upon inhibition (positively regulated by LRRK2)",
-      "labelDecrease": "Protein level increases<br> upon inhibition (negatively regulated by LRRK2)"
+      "labelIncrease": "Positively regulated by LRRK2 <br> Protein level decreases upon inhibition",
+      "labelDecrease": "Negatively regulated by LRRK2 <br> Protein level increases upon inhibition"
     }
   ],
   "categorization": [
