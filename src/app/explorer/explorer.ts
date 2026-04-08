@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal, computed, effect, input, viewChild, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
+import { Location } from '@angular/common';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { TitleCasePipe } from '@angular/common';
@@ -28,6 +29,7 @@ export class ExplorerComponent implements OnInit {
   private preferencesService = inject(PreferencesService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private location = inject(Location);
   protected readonly Math = Math;
   heatmapComponent = viewChild(HeatmapComponent);
   dataset = input.required<string>();
@@ -47,6 +49,7 @@ export class ExplorerComponent implements OnInit {
   selectedProjectIds = signal<Set<string>>(new Set());
   flippedProjectIds = signal<Set<string>>(new Set());
   manualProjectOrder = signal<ProjectMetadata[]>([]);
+  isInitialized = signal(false);
   getFilterSet(key: string): Set<string> {
     return this.filterState().get(key) || new Set();
   }
@@ -131,7 +134,8 @@ export class ExplorerComponent implements OnInit {
       }
     });
     const serializedUrl = this.router.serializeUrl(urlTree);
-    window.open(`${window.location.origin}${window.location.pathname}${serializedUrl}`, '_blank');
+    const fullUrl = window.location.origin + window.location.pathname + this.location.prepareExternalUrl(serializedUrl);
+    window.open(fullUrl, '_blank');
   }
   exportHighlightedProteins(format: 'csv' | 'tsv') {
     const selected = Array.from(this.selectedHeatmapProteins().values());
@@ -174,14 +178,17 @@ export class ExplorerComponent implements OnInit {
   constructor() {
     effect(() => {
       const ds = this.dataset();
-      this.currentDataset.set(ds);
-      this.filterState.set(new Map());
-      this.selectedProjectIds.set(new Set());
-      this.flippedProjectIds.set(new Set());
-      this.manualProjectOrder.set([]);
-      this.log2fcCutoff.set(null);
-      this.confidenceCutoff.set(null);
-      this.loadData(ds);
+      untracked(() => {
+        this.isInitialized.set(false);
+        this.currentDataset.set(ds);
+        this.filterState.set(new Map());
+        this.selectedProjectIds.set(new Set());
+        this.flippedProjectIds.set(new Set());
+        this.manualProjectOrder.set([]);
+        this.log2fcCutoff.set(null);
+        this.confidenceCutoff.set(null);
+        this.loadData(ds);
+      });
     });
     effect(() => {
       const projs = this.projects();
@@ -226,6 +233,7 @@ export class ExplorerComponent implements OnInit {
       });
     });
     effect(() => {
+      if (!this.isInitialized()) return;
       const log2fcCut = this.log2fcCutoff();
       const confCut = this.confidenceCutoff();
       const queryParams: any = {
@@ -646,6 +654,7 @@ export class ExplorerComponent implements OnInit {
     this.dataService.loadConfig().subscribe(config => {
       this.config.set(config);
       this.initializeFromUrl();
+      this.isInitialized.set(true);
     });
   }
   private initializeFromUrl() {
