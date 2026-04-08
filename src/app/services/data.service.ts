@@ -14,6 +14,9 @@ export interface DatasetConfig {
   stride: number;
   labelIncrease?: string;
   labelDecrease?: string;
+  defaultGenes?: string[];
+  defaultLog2fcCutoff?: number;
+  defaultConfidenceCutoff?: number;
 }
 export interface CategorizationRule {
   pattern: string;

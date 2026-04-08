@@ -152,7 +152,7 @@ export class ExplorerComponent implements OnInit {
   currentPresets = computed(() => this.preferencesService.getPresetsForDataset(this.currentDataset()));
   hasMultipleDatasets = computed(() => (this.config()?.datasets?.length || 0) > 1);
   currentDatasetConfig = computed(() => this.config()?.datasets.find(d => d.id === this.currentDataset()));
-  private defaultGenes = [
+  private defaultGenesFallback = [
     'TMEM175', 'OGA', 'NOD2', 'USP30', 'STING1', 'ATP13A2', 'MCOLN1', 'TLR2', 'GPNMB', 'GCG',
     'MAPT', 'PARP1', 'BECN1', 'CACNA1D', 'TREM2', 'NFE2L2', 'GBAP1', 'TGM2', 'VPS35', 'CTSB',
     'CDK5', 'GRN', 'FYN', 'NR4A2', 'PSAP', 'SYNJ1', 'FBXO7', 'VPS13C', 'GALC', 'SCARB2',
@@ -261,6 +261,7 @@ export class ExplorerComponent implements OnInit {
       this.projects.set(projects);
       this.allGenes.set(genes);
       const params = this.route.snapshot.queryParams;
+      const dsConfig = this.currentDatasetConfig();
       if (!params['flipped']) {
         const idsToFlip = new Set<string>();
         projects.forEach(p => {
@@ -273,14 +274,21 @@ export class ExplorerComponent implements OnInit {
         }
       }
       if (!params['genes'] && this.selectedGeneIds().size === 0) {
-        this.applyDefaultGenes();
+        this.applyDefaultGenes(dsConfig?.defaultGenes);
+      }
+      if (!params['cutoff'] && dsConfig?.defaultLog2fcCutoff !== undefined) {
+        this.log2fcCutoff.set(dsConfig.defaultLog2fcCutoff);
+      }
+      if (!params['conf'] && dsConfig?.defaultConfidenceCutoff !== undefined) {
+        this.confidenceCutoff.set(dsConfig.defaultConfidenceCutoff);
       }
       this.isLoading.set(false);
     });
   }
-  private applyDefaultGenes() {
+  private applyDefaultGenes(genesFromConfig?: string[]) {
     const ids = new Set<string>();
-    const lowerDefault = this.defaultGenes.map(g => g.toLowerCase());
+    const defaultList = genesFromConfig || this.defaultGenesFallback;
+    const lowerDefault = defaultList.map(g => g.toLowerCase());
     this.allGenes().forEach((gene: GeneData) => {
       const geneParts = gene.gene.toLowerCase().split(';').map(p => p.trim());
       if (geneParts.some(p => lowerDefault.includes(p))) {
@@ -617,10 +625,11 @@ export class ExplorerComponent implements OnInit {
     this.selectedGeneIds.set(new Set());
   }
   resetToDefault() {
+    const dsConfig = this.currentDatasetConfig();
     this.filterState.set(new Map());
     this.selectedProjectIds.set(new Set());
-    this.log2fcCutoff.set(null);
-    this.confidenceCutoff.set(null);
+    this.log2fcCutoff.set(dsConfig?.defaultLog2fcCutoff ?? null);
+    this.confidenceCutoff.set(dsConfig?.defaultConfidenceCutoff ?? null);
     this.geneSortOrder.set('none');
     const idsToFlip = new Set<string>();
     this.projects().forEach(p => {
@@ -631,7 +640,7 @@ export class ExplorerComponent implements OnInit {
     this.flippedProjectIds.set(idsToFlip);
     this.sortStack.set(['organ', 'protein', 'mutation', 'knockout', 'treatment']);
     this.searchTerm.set('');
-    this.applyDefaultGenes();
+    this.applyDefaultGenes(dsConfig?.defaultGenes);
   }
   ngOnInit() {
     this.dataService.loadConfig().subscribe(config => {
@@ -642,10 +651,11 @@ export class ExplorerComponent implements OnInit {
   private initializeFromUrl() {
     const params = this.route.snapshot.queryParams;
     const config = this.config();
+    const dsConfig = this.currentDatasetConfig();
     if (params['genes']) {
       this.selectedGeneIds.set(new Set(params['genes'].split(',')));
     } else {
-      this.applyDefaultGenes();
+      this.applyDefaultGenes(dsConfig?.defaultGenes);
     }
     if (config) {
       config.categorization.forEach(cat => {
@@ -675,12 +685,16 @@ export class ExplorerComponent implements OnInit {
       if (!isNaN(val) && val > 0) {
         this.log2fcCutoff.set(val);
       }
+    } else if (dsConfig?.defaultLog2fcCutoff !== undefined) {
+      this.log2fcCutoff.set(dsConfig.defaultLog2fcCutoff);
     }
     if (params['conf']) {
       const val = parseFloat(params['conf']);
       if (!isNaN(val) && val > 0) {
         this.confidenceCutoff.set(val);
       }
+    } else if (dsConfig?.defaultConfidenceCutoff !== undefined) {
+      this.confidenceCutoff.set(dsConfig.defaultConfidenceCutoff);
     }
   }
   addGene(gene: GeneData) {
