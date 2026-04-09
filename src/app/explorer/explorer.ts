@@ -52,7 +52,9 @@ export class ExplorerComponent implements OnInit {
   manualProjectOrder = signal<ProjectMetadata[]>([]);
   isInitialized = signal(false);
   tabs = signal<HeatmapTab[]>([]);
-  activeTabId = signal<string>('');
+  activeTabId = signal<string>('default');
+  tabs = signal<HeatmapTab[]>([]);
+  activeTabId = signal<string>('default');
   getFilterSet(key: string): Set<string> {
     return this.filterState().get(key) || new Set();
   }
@@ -61,27 +63,43 @@ export class ExplorerComponent implements OnInit {
     const tabName = name || `Subset (${geneIds.length})`;
     const newTab: HeatmapTab = { id, name: tabName, geneIds };
     this.tabs.update(t => [...t, newTab]);
-    this.switchTab(id);
+    this.activeTabId.set(id);
   }
   switchTab(tabId: string) {
-    const tab = this.tabs().find(t => t.id === tabId);
-    if (tab) {
-      untracked(() => {
-        this.activeTabId.set(tabId);
-        this.selectedGeneIds.set(new Set(tab.geneIds));
-      });
-    }
+    this.activeTabId.set(tabId);
   }
   removeTab(tabId: string, event?: Event) {
     if (event) event.stopPropagation();
-    if (this.tabs().length <= 1) return;
+    if (tabId === 'default') return;
     const currentTabs = this.tabs();
     const index = currentTabs.findIndex(t => t.id === tabId);
     const newTabs = currentTabs.filter(t => t.id !== tabId);
     this.tabs.set(newTabs);
     if (this.activeTabId() === tabId) {
       const nextIndex = Math.min(index, newTabs.length - 1);
-      this.switchTab(newTabs[nextIndex].id);
+      this.activeTabId.set(newTabs[nextIndex]?.id || 'default');
+    }
+  }
+  createTab(geneIds: string[], name?: string) {
+    const id = Math.random().toString(36).substring(2, 9);
+    const tabName = name || `Subset (${geneIds.length})`;
+    const newTab: HeatmapTab = { id, name: tabName, geneIds };
+    this.tabs.update(t => [...t, newTab]);
+    this.activeTabId.set(id);
+  }
+  switchTab(tabId: string) {
+    this.activeTabId.set(tabId);
+  }
+  removeTab(tabId: string, event?: Event) {
+    if (event) event.stopPropagation();
+    if (tabId === 'default') return;
+    const currentTabs = this.tabs();
+    const index = currentTabs.findIndex(t => t.id === tabId);
+    const newTabs = currentTabs.filter(t => t.id !== tabId);
+    this.tabs.set(newTabs);
+    if (this.activeTabId() === tabId) {
+      const nextIndex = Math.min(index, newTabs.length - 1);
+      this.activeTabId.set(newTabs[nextIndex]?.id || 'default');
     }
   }
   dropExperiment(event: CdkDragDrop<ProjectMetadata[]>) {
@@ -150,6 +168,7 @@ export class ExplorerComponent implements OnInit {
       this.selectedGeneIds.set(new Set(selected.keys()));
       this.selectedHeatmapProteins.set(new Map());
       this.geneFilterTerm.set('');
+      this.activeTabId.set('default');
     }
   }
   openSelectionInInternalTab() {
@@ -189,6 +208,58 @@ export class ExplorerComponent implements OnInit {
       return newMap;
     });
   }
+  createConsistentTab(groupProjects: ProjectMetadata[], direction: 'increase' | 'decrease') {
+    const log2fcCut = this.log2fcCutoff() || 0;
+    const confCut = this.confidenceCutoff() || 0;
+    const allProjs = this.projects();
+    const flipped = this.flippedProjectIds();
+    const projIndices = groupProjects.map(p => allProjs.indexOf(p));
+    const subset = this.allGenes().filter(g => {
+      if (projIndices.length === 0) return false;
+      return projIndices.every(idx => {
+        let val = g.log2fcs[idx];
+        const conf = g.confidences[idx];
+        if (val === null || conf === null) return false;
+        const projId = allProjs[idx].projectId;
+        if (flipped.has(projId)) val *= -1;
+        const passesLog2fc = Math.abs(val) >= log2fcCut;
+        const passesConf = conf >= confCut;
+        const correctDirection = direction === 'increase' ? val > 0 : val < 0;
+        return passesLog2fc && passesConf && correctDirection;
+      });
+    });
+    if (subset.length > 0) {
+      this.createTab(subset.map(g => g.uniprotId), `Consistently ${direction === 'increase' ? '↑' : '↓'} (${subset.length})`);
+    }
+  }
+  createUniqueTab(target: ProjectMetadata, groupProjects: ProjectMetadata[], direction: 'increase' | 'decrease') {
+    const log2fcCut = this.log2fcCutoff() || 0;
+    const confCut = this.confidenceCutoff() || 0;
+    const allProjs = this.projects();
+    const flipped = this.flippedProjectIds();
+    const targetIdx = allProjs.indexOf(target);
+    const otherIndices = groupProjects.filter(p => p !== target).map(p => allProjs.indexOf(p));
+    const subset = this.allGenes().filter(g => {
+      let targetVal = g.log2fcs[targetIdx];
+      const targetConf = g.confidences[targetIdx];
+      if (targetVal === null || targetConf === null) return false;
+      if (flipped.has(target.projectId)) targetVal *= -1;
+      const targetPasses = Math.abs(targetVal) >= log2fcCut && targetConf >= confCut && (direction === 'increase' ? targetVal > 0 : targetVal < 0);
+      if (!targetPasses) return false;
+      return otherIndices.every(idx => {
+        let v = g.log2fcs[idx];
+        const c = g.confidences[idx];
+        if (v === null || c === null) return true;
+        const projId = allProjs[idx].projectId;
+        if (flipped.has(projId)) v *= -1;
+        const passes = Math.abs(v) >= log2fcCut && c >= confCut;
+        return !passes;
+      });
+    });
+    if (subset.length > 0) {
+      this.createTab(subset.map(g => g.uniprotId), `Unique ${direction === 'increase' ? '↑' : '↓'} to ${target.projectName} (${subset.length})`);
+    }
+  }
   sortStack = signal<SortCriterion[]>(['organ', 'protein', 'mutation', 'knockout', 'treatment']);
   showPresetInput = signal(false);
   presetName = signal('');
@@ -224,18 +295,11 @@ export class ExplorerComponent implements OnInit {
         this.selectedProjectIds.set(new Set());
         this.flippedProjectIds.set(new Set());
         this.manualProjectOrder.set([]);
-        this.tabs.set([]);
-        this.activeTabId.set('');
+        this.tabs.set([{ id: 'default', name: 'Main Heatmap', geneIds: [] }]);
+        this.activeTabId.set('default');
         this.log2fcCutoff.set(null);
         this.confidenceCutoff.set(null);
         this.loadData(ds);
-      });
-    });
-    effect(() => {
-      const ids = Array.from(this.selectedGeneIds());
-      const activeId = this.activeTabId();
-      untracked(() => {
-        this.tabs.update(tabs => tabs.map(t => t.id === activeId ? { ...t, geneIds: ids } : t));
       });
     });
     effect(() => {
@@ -338,11 +402,6 @@ export class ExplorerComponent implements OnInit {
       if (!params['conf'] && dsConfig?.defaultConfidenceCutoff !== undefined) {
         this.confidenceCutoff.set(dsConfig.defaultConfidenceCutoff);
       }
-      if (this.tabs().length === 0) {
-        const initialGenes = Array.from(this.selectedGeneIds());
-        this.tabs.set([{ id: 'default', name: 'Main Explorer', geneIds: initialGenes }]);
-        this.activeTabId.set('default');
-      }
       this.isLoading.set(false);
     });
   }
@@ -402,7 +461,10 @@ export class ExplorerComponent implements OnInit {
       .slice(0, 10);
   });
   displayedGenes = computed(() => {
-    const selected = this.selectedGeneIds();
+    const globalSelected = this.selectedGeneIds();
+    const activeId = this.activeTabId();
+    const activeTab = this.tabs().find(t => t.id === activeId);
+    const sourceIds = (activeId === 'default' || !activeTab) ? globalSelected : new Set(activeTab.geneIds);
     const flipped = this.flippedProjectIds();
     const allProjs = this.projects();
     const log2fcCut = this.log2fcCutoff();
@@ -411,7 +473,7 @@ export class ExplorerComponent implements OnInit {
     const filterTerm = this.geneFilterTerm().toLowerCase().trim();
     const filteredProjIndices = new Set(this.filteredProjects().map(p => allProjs.indexOf(p)));
     const genes = this.allGenes()
-      .filter((g: GeneData) => selected.has(g.uniprotId))
+      .filter((g: GeneData) => sourceIds.has(g.uniprotId))
       .filter((g: GeneData) => {
         if (!filterTerm) return true;
         return g.gene.toLowerCase().includes(filterTerm) || g.uniprotId.toLowerCase().includes(filterTerm);
