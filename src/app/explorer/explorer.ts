@@ -274,7 +274,18 @@ export class ExplorerComponent implements OnInit {
       this.createTab(subset.map(g => g.uniprotId), `${target.projectName} Shared ${direction === 'increase' ? '↑' : '↓'} (${subset.length})`);
     }
   }
-  sortStack = signal<SortCriterion[]>(['organ', 'protein', 'mutation', 'knockout', 'treatment']);
+  groupingPresets = computed(() => {
+    const categorization = this.config()?.categorization || [];
+    if (categorization.length === 0) return [];
+    return categorization.map(cat => {
+      const primaryKey = cat.key;
+      const others = categorization.filter(c => c.key !== primaryKey).map(c => c.key);
+      const stack = [primaryKey, ...others] as SortCriterion[];
+      const label = [cat.label, ...categorization.filter(c => c.key !== primaryKey).map(c => c.label)].join(' > ');
+      return { label, stack };
+    });
+  });
+  sortStack = signal<SortCriterion[]>([]);
   showPresetInput = signal(false);
   presetName = signal('');
   currentPresets = computed(() => this.preferencesService.getPresetsForDataset(this.currentDataset()));
@@ -391,12 +402,8 @@ export class ExplorerComponent implements OnInit {
       });
     });
   }
-  setPreset(preset: string) {
-    if (preset === 'organ') this.sortStack.set(['organ', 'protein', 'mutation', 'knockout', 'treatment']);
-    else if (preset === 'mutation') this.sortStack.set(['mutation', 'treatment', 'organ', 'protein', 'knockout']);
-    else if (preset === 'protein') this.sortStack.set(['protein', 'mutation', 'knockout', 'treatment', 'organ']);
-    else if (preset === 'treatment') this.sortStack.set(['treatment', 'mutation', 'organ', 'protein', 'knockout']);
-    else if (preset === 'knockout') this.sortStack.set(['knockout', 'mutation', 'treatment', 'organ', 'protein']);
+  setPreset(stack: SortCriterion[]) {
+    this.sortStack.set([...stack]);
   }
   loadData(type: string) {
     this.isLoading.set(true);
@@ -424,6 +431,10 @@ export class ExplorerComponent implements OnInit {
       }
       if (!params['conf'] && dsConfig?.defaultConfidenceCutoff !== undefined) {
         this.confidenceCutoff.set(dsConfig.defaultConfidenceCutoff);
+      }
+      if (!params['sort']) {
+        const categorization = this.config()?.categorization || [];
+        this.sortStack.set(categorization.map(c => c.key) as SortCriterion[]);
       }
       this.isLoading.set(false);
     });

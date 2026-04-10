@@ -148,11 +148,9 @@
     </app-collapsible-section>
     <app-collapsible-section title="Grouping Presets">
       <div class="flex flex-col gap-2 p-1">
-        <button (click)="setPreset('organ')" class="text-left text-[11px] font-medium px-3 py-2 bg-white hover:bg-gray-50 rounded border border-gray-200 transition-colors shadow-sm">Organ > Protein > Mutation > Knockout > Treatment</button>
-        <button (click)="setPreset('protein')" class="text-left text-[11px] font-medium px-3 py-2 bg-white hover:bg-gray-50 rounded border border-gray-200 transition-colors shadow-sm">Protein > Mutation > Knockout > Treatment > Organ</button>
-        <button (click)="setPreset('mutation')" class="text-left text-[11px] font-medium px-3 py-2 bg-white hover:bg-gray-50 rounded border border-gray-200 transition-colors shadow-sm">Mutation > Knockout > Treatment > Organ > Protein</button>
-        <button (click)="setPreset('knockout')" class="text-left text-[11px] font-medium px-3 py-2 bg-white hover:bg-gray-50 rounded border border-gray-200 transition-colors shadow-sm">Knockout > Mutation > Treatment > Organ > Protein</button>
-        <button (click)="setPreset('treatment')" class="text-left text-[11px] font-medium px-3 py-2 bg-white hover:bg-gray-50 rounded border border-gray-200 transition-colors shadow-sm">Treatment > Mutation > Organ > Protein > Knockout</button>
+        @for (preset of groupingPresets(); track preset.label) {
+          <button (click)="setPreset(preset.stack)" class="text-left text-[11px] font-medium px-3 py-2 bg-white hover:bg-gray-50 rounded border border-gray-200 transition-colors shadow-sm">{{ preset.label }}</button>
+        }
       </div>
     </app-collapsible-section>
     <app-collapsible-section title="Group By Hierarchy">
