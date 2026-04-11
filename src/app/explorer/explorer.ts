@@ -1,10 +1,9 @@
 import { Component, OnInit, inject, signal, computed, effect, input, viewChild, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
-import { Location, DatePipe } from '@angular/common';
+import { Location, DatePipe, TitleCasePipe } from '@angular/common';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ScrollingModule } from '@angular/cdk/scrolling';
-import { TitleCasePipe } from '@angular/common';
 import { CurtainFilterComponent } from '../curtain-filter/curtain-filter';
 import { HeatmapComponent } from '../heatmap/heatmap';
 import { RankPlotComponent } from '../components/rank-plot/rank-plot';
@@ -65,6 +64,7 @@ export class ExplorerComponent implements OnInit {
   activeTabId = signal<string>('default');
   showHistoryDropdown = signal(false);
   subsetCriteria = signal<Map<string, 'up' | 'down' | 'none'>>(new Map());
+  isSwitching = signal(false);
 
   selectionHistory = computed(() => this.historyService.getHistoryForDataset(this.currentDataset()));
 
@@ -133,11 +133,15 @@ export class ExplorerComponent implements OnInit {
     const tabName = name || `Subset (${geneIds.length})`;
     const newTab: HeatmapTab = { id, name: tabName, geneIds };
     this.tabs.update(t => [...t, newTab]);
-    this.activeTabId.set(id);
+    this.switchTab(id);
   }
 
   switchTab(tabId: string) {
-    this.activeTabId.set(tabId);
+    this.isSwitching.set(true);
+    setTimeout(() => {
+      this.activeTabId.set(tabId);
+      this.isSwitching.set(false);
+    }, 50);
   }
 
   removeTab(tabId: string, event?: Event) {
@@ -149,7 +153,7 @@ export class ExplorerComponent implements OnInit {
     this.tabs.set(newTabs);
     if (this.activeTabId() === tabId) {
       const nextIndex = Math.min(index, newTabs.length - 1);
-      this.activeTabId.set(newTabs[nextIndex]?.id || 'default');
+      this.switchTab(newTabs[nextIndex]?.id || 'default');
     }
   }
 
@@ -629,7 +633,6 @@ export class ExplorerComponent implements OnInit {
     const activeTab = this.tabs().find(t => t.id === activeId);
     const sourceIds = (activeId === 'default' || !activeTab) ? globalSelected : new Set(activeTab.geneIds);
     
-    const flipped = this.flippedProjectIds();
     const allProjs = this.projects();
     const log2fcCut = this.log2fcCutoff();
     const confCut = this.confidenceCutoff();
@@ -637,19 +640,11 @@ export class ExplorerComponent implements OnInit {
     const filterTerm = this.geneFilterTerm().toLowerCase().trim();
     const filteredProjIndices = new Set(this.filteredProjects().map(p => allProjs.indexOf(p)));
 
-    const genes = this.allGenes()
+    return this.allGenes()
       .filter((g: GeneData) => sourceIds.has(g.uniprotId))
       .filter((g: GeneData) => {
         if (!filterTerm) return true;
         return g.gene.toLowerCase().includes(filterTerm) || g.uniprotId.toLowerCase().includes(filterTerm);
-      })
-      .map(g => {
-        const log2fcs = g.log2fcs.map((val, idx) => {
-          if (val === null) return null;
-          const projId = allProjs[idx].projectId;
-          return flipped.has(projId) ? val * -1 : val;
-        });
-        return { ...g, log2fcs };
       })
       .filter(g => {
         const hasLog2fcCutoff = log2fcCut !== null && log2fcCut > 0;
@@ -664,14 +659,12 @@ export class ExplorerComponent implements OnInit {
           const passesConf = !hasConfCutoff || (conf !== null && conf >= confCut!);
           return passesLog2fc && passesConf;
         });
+      }).sort((a, b) => {
+        if (sortOrder === 'none') return 0;
+        const countA = this.countDirectionForGene(a, filteredProjIndices, log2fcCut, confCut, sortOrder);
+        const countB = this.countDirectionForGene(b, filteredProjIndices, log2fcCut, confCut, sortOrder);
+        return countB - countA;
       });
-
-    if (sortOrder === 'none') return genes;
-    return [...genes].sort((a, b) => {
-      const countA = this.countDirectionForGene(a, filteredProjIndices, log2fcCut, confCut, sortOrder);
-      const countB = this.countDirectionForGene(b, filteredProjIndices, log2fcCut, confCut, sortOrder);
-      return countB - countA;
-    });
   });
 
   private countDirectionForGene(
@@ -682,14 +675,20 @@ export class ExplorerComponent implements OnInit {
     direction: 'increase' | 'decrease'
   ): number {
     let count = 0;
+    const flippedIds = this.flippedProjectIds();
+    const projs = this.projects();
+
     gene.log2fcs.forEach((val, idx) => {
       if (!projIndices.has(idx) || val === null) return;
       const conf = gene.confidences[idx];
       const passesConf = confCut === null || confCut <= 0 || (conf !== null && conf >= confCut);
       const passesLog2fc = log2fcCut === null || log2fcCut <= 0 || Math.abs(val) >= log2fcCut;
+      
       if (passesConf && passesLog2fc) {
-        if (direction === 'increase' && val > 0) count++;
-        else if (direction === 'decrease' && val < 0) count++;
+        let v = val;
+        if (flippedIds.has(projs[idx].projectId)) v *= -1;
+        if (direction === 'increase' && v > 0) count++;
+        else if (direction === 'decrease' && v < 0) count++;
       }
     });
     return count;
@@ -706,7 +705,9 @@ export class ExplorerComponent implements OnInit {
       const projectMatch = sProjectIds.size === 0 || sProjectIds.has(p.projectId);
       let categorizationMatch = true;
       fState.forEach((selectedValues, key) => {
-        if (selectedValues.size > 0 && !selectedValues.has(p[key])) categorizationMatch = false;
+        if (selectedValues.size > 0 && !selectedValues.has(p[key])) {
+          categorizationMatch = false;
+        }
       });
       return projectMatch && categorizationMatch;
     });
@@ -822,21 +823,29 @@ export class ExplorerComponent implements OnInit {
   }
 
   private calculateHeatmapSummary(projects: ProjectMetadata[], genes: GeneData[]): { increase: number; decrease: number; total: number } {
-    const allProjs = this.projects();
+    const projs = this.projects();
+    const flippedIds = this.flippedProjectIds();
     const log2fcCut = this.log2fcCutoff();
     const confCut = this.confidenceCutoff();
-    const projIndices = new Set(projects.map(p => allProjs.indexOf(p)));
+    const projIndices = projects.map(p => projs.indexOf(p));
+    
     let increase = 0;
     let decrease = 0;
     let total = 0;
+    
     genes.forEach(g => {
-      g.log2fcs.forEach((val, idx) => {
-        if (!projIndices.has(idx) || val === null) return;
+      projIndices.forEach(idx => {
+        if (idx === -1) return;
+        let val = g.log2fcs[idx];
         const conf = g.confidences[idx];
-        const passesConf = confCut === null || confCut <= 0 || (conf !== null && conf >= confCut);
+        if (val === null || conf === null) return;
+        
+        const passesConf = confCut === null || confCut <= 0 || (conf >= confCut);
         const passesLog2fc = log2fcCut === null || log2fcCut <= 0 || Math.abs(val) >= log2fcCut;
+        
         if (passesConf && passesLog2fc) {
           total++;
+          if (flippedIds.has(projs[idx].projectId)) val *= -1;
           if (val > 0) increase++;
           else if (val < 0) decrease++;
         }
