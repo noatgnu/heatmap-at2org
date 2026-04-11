@@ -57,9 +57,59 @@ export class ExplorerComponent implements OnInit {
   tabs = signal<HeatmapTab[]>([]);
   activeTabId = signal<string>('default');
   showHistoryDropdown = signal(false);
+  subsetCriteria = signal<Map<string, 'up' | 'down' | 'none'>>(new Map());
   selectionHistory = computed(() => this.historyService.getHistoryForDataset(this.currentDataset()));
   getFilterSet(key: string): Set<string> {
     return this.filterState().get(key) || new Set();
+  }
+  toggleSubsetCriterion(projectId: string, direction: 'up' | 'down') {
+    this.subsetCriteria.update(map => {
+      const newMap = new Map(map);
+      const current = newMap.get(projectId) || 'none';
+      if (current === direction) {
+        newMap.set(projectId, 'none');
+      } else {
+        newMap.set(projectId, direction);
+      }
+      return newMap;
+    });
+  }
+  clearSubsetCriteria() {
+    this.subsetCriteria.set(new Map());
+  }
+  createCustomSubset(groupProjects: ProjectMetadata[], mode: 'intersection' | 'union') {
+    const criteria = this.subsetCriteria();
+    const activeProjects = groupProjects.filter(p => {
+      const val = criteria.get(p.projectId);
+      return val && val !== 'none';
+    });
+    if (activeProjects.length === 0) return;
+    const log2fcCut = this.log2fcCutoff() || 0;
+    const confCut = this.confidenceCutoff() || 0;
+    const allProjs = this.projects();
+    const flipped = this.flippedProjectIds();
+    const subset = this.allGenes().filter(g => {
+      const matchResults = activeProjects.map(p => {
+        const idx = allProjs.indexOf(p);
+        let val = g.log2fcs[idx];
+        const conf = g.confidences[idx];
+        if (val === null || conf === null) return false;
+        if (flipped.has(p.projectId)) val *= -1;
+        const targetDir = criteria.get(p.projectId);
+        const passesLog2fc = Math.abs(val) >= log2fcCut;
+        const passesConf = conf >= confCut;
+        const correctDirection = targetDir === 'up' ? val > 0 : val < 0;
+        return passesLog2fc && passesConf && correctDirection;
+      });
+      return mode === 'intersection' ? matchResults.every(r => r) : matchResults.some(r => r);
+    });
+    if (subset.length > 0) {
+      const names = activeProjects.map(p => {
+        const dir = criteria.get(p.projectId) === 'up' ? '↑' : '↓';
+        return `${p.projectName}${dir}`;
+      }).join(mode === 'intersection' ? ' & ' : ' | ');
+      this.createTab(subset.map(g => g.uniprotId), `${mode === 'intersection' ? '∩' : '∪'} ${names} (${subset.length})`);
+    }
   }
   createTab(geneIds: string[], name?: string) {
     const id = Math.random().toString(36).substring(2, 9);
