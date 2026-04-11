@@ -9,6 +9,7 @@ import { CurtainFilterComponent } from '../curtain-filter/curtain-filter';
 import { HeatmapComponent } from '../heatmap/heatmap';
 import { RankPlotComponent } from '../components/rank-plot/rank-plot';
 import { SkeletonLoaderComponent } from '../components/skeleton-loader/skeleton-loader';
+import { TabsComponent } from '../components/tabs/tabs';
 import { FilterChipsComponent, FilterChip } from '../components/filter-chips/filter-chips';
 import { CollapsibleSectionComponent } from '../components/collapsible-section/collapsible-section';
 import { FindGenePipe } from '../pipes/find-gene.pipe';
@@ -20,7 +21,7 @@ import { HistoryService, SelectionHistoryEntry } from '../services/history.servi
 @Component({
   selector: 'app-explorer',
   standalone: true,
-  imports: [FormsModule, DragDropModule, ScrollingModule, CurtainFilterComponent, HeatmapComponent, RankPlotComponent, SkeletonLoaderComponent, FilterChipsComponent, CollapsibleSectionComponent, RouterLink, FindGenePipe, TitleCasePipe, DatePipe],
+  imports: [FormsModule, DragDropModule, ScrollingModule, CurtainFilterComponent, HeatmapComponent, RankPlotComponent, SkeletonLoaderComponent, TabsComponent, FilterChipsComponent, CollapsibleSectionComponent, RouterLink, FindGenePipe, TitleCasePipe, DatePipe],
   templateUrl: './explorer.html',
   styleUrl: './explorer.scss'
 })
@@ -981,12 +982,7 @@ export class ExplorerComponent implements OnInit {
       name,
       this.currentDataset(),
       this.selectedGeneIds(),
-      this.getFilterSet('organ'),
-      this.getFilterSet('protein'),
-      this.getFilterSet('mutation'),
-      this.getFilterSet('knockout'),
-      this.getFilterSet('treatment'),
-      this.getFilterSet('fraction'),
+      this.filterState(),
       this.sortStack(),
       this.flippedProjectIds()
     );
@@ -995,16 +991,9 @@ export class ExplorerComponent implements OnInit {
   }
   loadPreset(preset: FilterPreset) {
     this.selectedGeneIds.set(new Set(preset.geneIds));
-    this.filterState.update(map => {
-      const newMap = new Map(map);
-      if (preset.organs) newMap.set('organ', new Set(preset.organs));
-      if (preset.proteins) newMap.set('protein', new Set(preset.proteins));
-      if (preset.mutations) newMap.set('mutation', new Set(preset.mutations));
-      if (preset.knockouts) newMap.set('knockout', new Set(preset.knockouts));
-      if (preset.treatments) newMap.set('treatment', new Set(preset.treatments));
-      if (preset.fractions) newMap.set('fraction', new Set(preset.fractions));
-      return newMap;
-    });
+    this.filterState.set(new Map(
+      Object.entries(preset.filterState).map(([key, val]) => [key, new Set(val)])
+    ));
     this.sortStack.set([...preset.sortStack]);
     this.flippedProjectIds.set(new Set(preset.flippedProjectIds));
   }
