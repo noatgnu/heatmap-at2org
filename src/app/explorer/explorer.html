@@ -387,6 +387,11 @@
                               }
                             </div>
 
+                            <div class="flex gap-2">
+                              <button (click)="createCustomSubset(group.projects, 'intersection')" 
+                                      class="flex-1 px-2 py-1.5 bg-indigo-600 text-white text-[9px] font-bold rounded hover:bg-indigo-700 transition-all uppercase shadow-sm active:scale-95">Intersect (AND)</button>
+                              <button (click)="createCustomSubset(group.projects, 'union')"
+                                      class="flex-1 px-2 py-1.5 bg-gray-600 text-white text-[9px] font-bold rounded hover:bg-gray-600 transition-all uppercase shadow-sm active:scale-95">Union (ANY)</button>
                             </div>
                           </div>
                         </div>
