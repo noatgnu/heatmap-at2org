@@ -421,6 +421,7 @@
                       <app-heatmap [genes]="displayedGenes()" 
                                    [projects]="group.projects" 
                                    [allProjects]="projects()" 
+                                   [tabTitle]="tabs().find(t => t.id === activeTabId())?.name || ''"
                                    [flippedProjectIds]="flippedProjectIds()"
                                    [selectedGeneIds]="selectedHeatmapProteinIds()" 
                                    [summaryDisplayMode]="summaryDisplayMode()" 

@@ -15,6 +15,7 @@ export class HeatmapComponent {
   genes = input.required<GeneData[]>();
   projects = input.required<ProjectMetadata[]>();
   allProjects = input.required<ProjectMetadata[]>();
+  tabTitle = input<string>('');
   flippedProjectIds = input<Set<string>>(new Set());
   selectedGeneIds = input<Set<string>>(new Set());
   summaryDisplayMode = input<'number' | 'proportion'>('proportion');
