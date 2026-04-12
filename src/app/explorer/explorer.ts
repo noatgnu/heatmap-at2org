@@ -64,6 +64,8 @@ export class ExplorerComponent implements OnInit {
   activeTabId = signal<string>('default');
   showHistoryDropdown = signal(false);
   subsetCriteria = signal<Map<string, 'up' | 'down' | 'none'>>(new Map());
+  subsetLog2fc = signal<number | null>(null);
+  subsetConfidence = signal<number | null>(null);
   isSwitching = signal(false);
 
   selectionHistory = computed(() => this.historyService.getHistoryForDataset(this.currentDataset()));
@@ -87,6 +89,8 @@ export class ExplorerComponent implements OnInit {
 
   clearSubsetCriteria() {
     this.subsetCriteria.set(new Map());
+    this.subsetLog2fc.set(null);
+    this.subsetConfidence.set(null);
   }
 
   createCustomSubset(groupProjects: ProjectMetadata[], mode: 'intersection' | 'union') {
@@ -97,8 +101,9 @@ export class ExplorerComponent implements OnInit {
     });
     if (activeProjects.length === 0) return;
 
-    const log2fcCut = this.log2fcCutoff() || 0;
-    const confCut = this.confidenceCutoff() || 0;
+    const log2fcCut = this.subsetLog2fc() ?? this.log2fcCutoff() ?? 0;
+    const confCut = this.subsetConfidence() ?? this.confidenceCutoff() ?? 0;
+    
     const allProjs = this.projects();
     const flipped = this.flippedProjectIds();
 
@@ -124,7 +129,8 @@ export class ExplorerComponent implements OnInit {
         const dir = criteria.get(p.projectId) === 'up' ? '↑' : '↓';
         return `${p.projectName}${dir}`;
       }).join(mode === 'intersection' ? ' & ' : ' | ');
-      this.createTab(subset.map(g => g.uniprotId), `${mode === 'intersection' ? '∩' : '∪'} ${names} (${subset.length})`);
+      const cutInfo = (this.subsetLog2fc() || this.subsetConfidence()) ? ` [FC:${log2fcCut}, C:${confCut}]` : '';
+      this.createTab(subset.map(g => g.uniprotId), `${mode === 'intersection' ? '∩' : '∪'} ${names}${cutInfo} (${subset.length})`);
     }
   }
 
@@ -633,38 +639,50 @@ export class ExplorerComponent implements OnInit {
     const activeTab = this.tabs().find(t => t.id === activeId);
     const sourceIds = (activeId === 'default' || !activeTab) ? globalSelected : new Set(activeTab.geneIds);
     
+    if (sourceIds.size === 0) return [];
+
     const allProjs = this.projects();
     const log2fcCut = this.log2fcCutoff();
     const confCut = this.confidenceCutoff();
     const sortOrder = this.geneSortOrder();
     const filterTerm = this.geneFilterTerm().toLowerCase().trim();
     const filteredProjIndices = new Set(this.filteredProjects().map(p => allProjs.indexOf(p)));
+    const flippedIds = this.flippedProjectIds();
 
-    return this.allGenes()
-      .filter((g: GeneData) => sourceIds.has(g.uniprotId))
-      .filter((g: GeneData) => {
-        if (!filterTerm) return true;
-        return g.gene.toLowerCase().includes(filterTerm) || g.uniprotId.toLowerCase().includes(filterTerm);
-      })
-      .filter(g => {
-        const hasLog2fcCutoff = log2fcCut !== null && log2fcCut > 0;
-        const hasConfCutoff = confCut !== null && confCut > 0;
-        if (!hasLog2fcCutoff && !hasConfCutoff) return true;
+    // 1. Get base genes from stable source (no mapping to keep objects stable)
+    const genes = this.allGenes().filter(g => sourceIds.has(g.uniprotId));
 
-        return g.log2fcs.some((val, idx) => {
-          if (!filteredProjIndices.has(idx)) return false;
-          if (val === null) return false;
-          const passesLog2fc = !hasLog2fcCutoff || Math.abs(val) >= log2fcCut!;
-          const conf = g.confidences[idx];
-          const passesConf = !hasConfCutoff || (conf !== null && conf >= confCut!);
-          return passesLog2fc && passesConf;
-        });
-      }).sort((a, b) => {
-        if (sortOrder === 'none') return 0;
-        const countA = this.countDirectionForGene(a, filteredProjIndices, log2fcCut, confCut, sortOrder);
-        const countB = this.countDirectionForGene(b, filteredProjIndices, log2fcCut, confCut, sortOrder);
-        return countB - countA;
+    // 2. Apply search filter
+    const termFiltered = filterTerm 
+      ? genes.filter(g => g.gene.toLowerCase().includes(filterTerm) || g.uniprotId.toLowerCase().includes(filterTerm))
+      : genes;
+
+    // 3. Apply significance filter (NON-DESTRUCTIVE - just for display)
+    const filtered = termFiltered.filter(g => {
+      const hasLog2fcCutoff = log2fcCut !== null && log2fcCut > 0;
+      const hasConfCutoff = confCut !== null && confCut > 0;
+      if (!hasLog2fcCutoff && !hasConfCutoff) return true;
+
+      return g.log2fcs.some((val, idx) => {
+        if (!filteredProjIndices.has(idx) || val === null) return false;
+        
+        let v = val;
+        if (flippedIds.has(allProjs[idx].projectId)) v *= -1;
+        
+        const passesLog2fc = !hasLog2fcCutoff || Math.abs(v) >= log2fcCut!;
+        const conf = g.confidences[idx];
+        const passesConf = !hasConfCutoff || (conf !== null && conf >= confCut!);
+        return passesLog2fc && passesConf;
       });
+    });
+
+    // 4. Sort
+    if (sortOrder === 'none') return filtered;
+    return [...filtered].sort((a, b) => {
+      const countA = this.countDirectionForGene(a, filteredProjIndices, log2fcCut, confCut, sortOrder);
+      const countB = this.countDirectionForGene(b, filteredProjIndices, log2fcCut, confCut, sortOrder);
+      return countB - countA;
+    });
   });
 
   private countDirectionForGene(
