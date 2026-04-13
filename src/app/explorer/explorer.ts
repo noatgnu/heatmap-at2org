@@ -280,6 +280,17 @@ export class ExplorerComponent implements OnInit {
     this.exportService.exportProteinList(selected, format, filename);
   }
 
+  onExportRequested(event: { scope: 'all' | 'highlighted', format: 'csv' | 'tsv' }) {
+    if (event.scope === 'highlighted') {
+      this.exportHighlightedProteins(event.format);
+    } else {
+      const genes = this.displayedGenes();
+      if (genes.length === 0) return;
+      const filename = `heatmap_proteins_${this.currentDataset()}_${new Date().toISOString().slice(0, 10)}`;
+      this.exportService.exportProteinList(genes, event.format, filename);
+    }
+  }
+
   removeHeatmapSelection(uniprotId: string) {
     this.selectedHeatmapProteins.update(map => {
       const newMap = new Map(map);
@@ -380,6 +391,11 @@ export class ExplorerComponent implements OnInit {
       this.createTab(subset.map(g => g.uniprotId), `${target.projectName} Shared ${direction === 'increase' ? '↑' : '↓'} (${subset.length})`);
     }
   }
+
+  globalSelectedGenes = computed(() => {
+    const ids = this.selectedGeneIds();
+    return this.allGenes().filter(g => ids.has(g.uniprotId));
+  });
 
   activeTabGeneIds = computed(() => {
     const globalSelected = this.selectedGeneIds();
