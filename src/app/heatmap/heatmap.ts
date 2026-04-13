@@ -22,6 +22,8 @@ export class HeatmapComponent {
   isSwapped = input<boolean>(false);
   labelIncrease = input<string>('Increase activity');
   labelDecrease = input<string>('Decrease activity');
+  log2fcCutoff = input<number | null>(null);
+  confidenceCutoff = input<number | null>(null);
 
   geneHovered = output<string | null>();
   geneSelected = output<string>();
@@ -211,6 +213,8 @@ export class HeatmapComponent {
     const allProjs = this.allProjects();
     const swapped = this.isSwapped();
     const flippedIds = this.flippedProjectIds();
+    const log2fcCut = this.log2fcCutoff();
+    const confCut = this.confidenceCutoff();
 
     if (genes.length === 0 || projs.length === 0) return { data: [], layout: { height: 600, width: 800 } };
 
@@ -229,19 +233,29 @@ export class HeatmapComponent {
       yCoords = geneCoords;
       z = genes.map((g: GeneData) =>
         projs.map((p: ProjectMetadata, projIdx: number) => {
-          let val = g.log2fcs[projIndices[projIdx]];
-          if (val !== null && flippedIds.has(p.projectId)) {
-            val *= -1;
+          const allProjIdx = projIndices[projIdx];
+          let val = g.log2fcs[allProjIdx];
+          const conf = g.confidences[allProjIdx];
+          
+          if (val !== null) {
+            const passesLog2fc = log2fcCut === null || log2fcCut <= 0 || Math.abs(val) >= log2fcCut;
+            const passesConf = confCut === null || confCut <= 0 || (conf !== null && conf >= confCut);
+            if (!passesLog2fc || !passesConf) return null;
+            if (flippedIds.has(p.projectId)) val *= -1;
           }
           return val;
         })
       );
       customdata = genes.map((g: GeneData) =>
-        projs.map((_, projIdx: number) => ({
-          conf: g.confidences[projIndices[projIdx]],
-          gene: g.gene,
-          proj: projs[projIdx].projectName
-        }))
+        projs.map((_, projIdx: number) => {
+          const allProjIdx = projIndices[projIdx];
+          return {
+            conf: g.confidences[allProjIdx],
+            gene: g.gene,
+            proj: projs[projIdx].projectName,
+            rawLog2fc: g.log2fcs[allProjIdx]
+          };
+        })
       );
     } else {
       xLabels = geneLabels;
@@ -250,19 +264,29 @@ export class HeatmapComponent {
       yCoords = projCoords;
       z = projs.map((p: ProjectMetadata, projIdx: number) =>
         genes.map((g: GeneData) => {
-          let val = g.log2fcs[projIndices[projIdx]];
-          if (val !== null && flippedIds.has(p.projectId)) {
-            val *= -1;
+          const allProjIdx = projIndices[projIdx];
+          let val = g.log2fcs[allProjIdx];
+          const conf = g.confidences[allProjIdx];
+
+          if (val !== null) {
+            const passesLog2fc = log2fcCut === null || log2fcCut <= 0 || Math.abs(val) >= log2fcCut;
+            const passesConf = confCut === null || confCut <= 0 || (conf !== null && conf >= confCut);
+            if (!passesLog2fc || !passesConf) return null;
+            if (flippedIds.has(p.projectId)) val *= -1;
           }
           return val;
         })
       );
       customdata = projs.map((_, projIdx: number) =>
-        genes.map((g: GeneData) => ({
-          conf: g.confidences[projIndices[projIdx]],
-          gene: g.gene,
-          proj: projs[projIdx].projectName
-        }))
+        genes.map((g: GeneData) => {
+          const allProjIdx = projIndices[projIdx];
+          return {
+            conf: g.confidences[allProjIdx],
+            gene: g.gene,
+            proj: projs[projIdx].projectName,
+            rawLog2fc: g.log2fcs[allProjIdx]
+          };
+        })
       );
     }
 
@@ -447,7 +471,7 @@ export class HeatmapComponent {
           hovertemplate:
             '<b>Protein:</b> %{customdata.gene}<br>' +
             '<b>Experiment:</b> %{customdata.proj}<br>' +
-            '<b>Log2FC:</b> %{z:.3f}<br>' +
+            '<b>Log2FC:</b> %{customdata.rawLog2fc:.3f}<br>' +
             '<b>Confidence:</b> %{customdata.conf:.3f}<extra></extra>',
           type: 'heatmap',
           hoverongaps: false,
