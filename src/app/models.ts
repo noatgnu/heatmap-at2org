@@ -27,4 +27,6 @@ export interface HeatmapTab {
   id: string;
   name: string;
   geneIds: string[];
+  log2fcCutoff?: number | null;
+  confidenceCutoff?: number | null;
 }

@@ -131,12 +131,13 @@ export class ExplorerComponent implements OnInit {
       // 2. For 'exclusive' mode, also check projects that ARE NOT toggled 
       // (they must NOT meet the significance thresholds)
       if (mode === 'exclusive') {
-        const nonActiveProjects = groupProjects.filter(p => !activeProjects.includes(p));
+        const allVisibleProjects = this.filteredProjects();
+        const nonActiveProjects = allVisibleProjects.filter(p => !activeProjects.find(ap => ap.projectId === p.projectId));
         const isNotSignificantElsewhere = nonActiveProjects.every(p => {
           const idx = allProjs.indexOf(p);
           let val = g.log2fcs[idx];
           const conf = g.confidences[idx];
-          if (val === null || conf === null) return true; // Truly no data is "not significant"
+          if (val === null || conf === null) return true; 
           if (flipped.has(p.projectId)) val *= -1;
           
           const passesThresholds = Math.abs(val) >= log2fcCut && conf >= confCut;
@@ -158,14 +159,14 @@ export class ExplorerComponent implements OnInit {
       const suffix = mode === 'exclusive' ? ' (Unique)' : '';
       const cutInfo = (this.subsetLog2fc() || this.subsetConfidence()) ? ` [FC:${log2fcCut}, C:${confCut}]` : '';
       
-      this.createTab(subset.map(g => g.uniprotId), `${prefix} ${names}${cutInfo}${suffix} (${subset.length})`);
+      this.createTab(subset.map(g => g.uniprotId), `${prefix} ${names}${cutInfo}${suffix} (${subset.length})`, log2fcCut, confCut);
     }
   }
 
-  createTab(geneIds: string[], name?: string) {
+  createTab(geneIds: string[], name?: string, log2fcCut?: number | null, confCut?: number | null) {
     const id = Math.random().toString(36).substring(2, 9);
     const tabName = name || `Subset (${geneIds.length})`;
-    const newTab: HeatmapTab = { id, name: tabName, geneIds };
+    const newTab: HeatmapTab = { id, name: tabName, geneIds, log2fcCutoff: log2fcCut, confidenceCutoff: confCut };
     this.tabs.update(t => [...t, newTab]);
     this.switchTab(id);
   }
@@ -350,7 +351,7 @@ export class ExplorerComponent implements OnInit {
     });
 
     if (subset.length > 0) {
-      this.createTab(subset.map(g => g.uniprotId), `Consistently ${direction === 'increase' ? '↑' : '↓'} (${subset.length})`);
+      this.createTab(subset.map(g => g.uniprotId), `Consistently ${direction === 'increase' ? '↑' : '↓'} (${subset.length})`, log2fcCut, confCut);
     }
   }
 
@@ -383,7 +384,7 @@ export class ExplorerComponent implements OnInit {
     });
 
     if (subset.length > 0) {
-      this.createTab(subset.map(g => g.uniprotId), `Unique ${direction === 'increase' ? '↑' : '↓'} to ${target.projectName} (${subset.length})`);
+      this.createTab(subset.map(g => g.uniprotId), `Unique ${direction === 'increase' ? '↑' : '↓'} to ${target.projectName} (${subset.length})`, log2fcCut, confCut);
     }
   }
 
@@ -416,7 +417,7 @@ export class ExplorerComponent implements OnInit {
     });
 
     if (subset.length > 0) {
-      this.createTab(subset.map(g => g.uniprotId), `${target.projectName} Shared ${direction === 'increase' ? '↑' : '↓'} (${subset.length})`);
+      this.createTab(subset.map(g => g.uniprotId), `${target.projectName} Shared ${direction === 'increase' ? '↑' : '↓'} (${subset.length})`, log2fcCut, confCut);
     }
   }
 
@@ -430,6 +431,22 @@ export class ExplorerComponent implements OnInit {
     const activeId = this.activeTabId();
     const activeTab = this.tabs().find(t => t.id === activeId);
     return (activeId === 'default' || !activeTab) ? globalSelected : new Set(activeTab.geneIds);
+  });
+
+  effectiveLog2fcCutoff = computed(() => {
+    const globalCut = this.log2fcCutoff() || 0;
+    const activeId = this.activeTabId();
+    const activeTab = this.tabs().find(t => t.id === activeId);
+    const tabCut = (activeTab?.log2fcCutoff) || 0;
+    return Math.max(globalCut, tabCut);
+  });
+
+  effectiveConfidenceCutoff = computed(() => {
+    const globalCut = this.confidenceCutoff() || 0;
+    const activeId = this.activeTabId();
+    const activeTab = this.tabs().find(t => t.id === activeId);
+    const tabCut = (activeTab?.confidenceCutoff) || 0;
+    return Math.max(globalCut, tabCut);
   });
 
   groupingPresets = computed(() => {
@@ -682,8 +699,8 @@ export class ExplorerComponent implements OnInit {
     if (activeIds.size === 0) return [];
 
     const allProjs = this.projects();
-    const log2fcCut = this.log2fcCutoff();
-    const confCut = this.confidenceCutoff();
+    const log2fcCut = this.effectiveLog2fcCutoff();
+    const confCut = this.effectiveConfidenceCutoff();
     const sortOrder = this.geneSortOrder();
     const filterTerm = this.geneFilterTerm().toLowerCase().trim();
     const filteredProjIndices = new Set(this.filteredProjects().map(p => allProjs.indexOf(p)));
@@ -876,8 +893,8 @@ export class ExplorerComponent implements OnInit {
   private calculateHeatmapSummary(projects: ProjectMetadata[], genes: GeneData[]): { increase: number; decrease: number; total: number } {
     const projs = this.projects();
     const flippedIds = this.flippedProjectIds();
-    const log2fcCut = this.log2fcCutoff();
-    const confCut = this.confidenceCutoff();
+    const log2fcCut = this.effectiveLog2fcCutoff();
+    const confCut = this.effectiveConfidenceCutoff();
     const projIndices = projects.map(p => projs.indexOf(p));
     
     let increase = 0;
