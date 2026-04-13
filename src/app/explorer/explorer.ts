@@ -381,6 +381,13 @@ export class ExplorerComponent implements OnInit {
     }
   }
 
+  activeTabGeneIds = computed(() => {
+    const globalSelected = this.selectedGeneIds();
+    const activeId = this.activeTabId();
+    const activeTab = this.tabs().find(t => t.id === activeId);
+    return (activeId === 'default' || !activeTab) ? globalSelected : new Set(activeTab.geneIds);
+  });
+
   groupingPresets = computed(() => {
     const categorization = this.config()?.categorization || [];
     if (categorization.length === 0) return [];
@@ -592,18 +599,11 @@ export class ExplorerComponent implements OnInit {
 
     if (matchedIds.size === 1) {
       const id = Array.from(matchedIds)[0];
-      const activeId = this.activeTabId();
-      if (activeId === 'default') {
-        this.selectedGeneIds.update((set: Set<string>) => {
-          const newSet = new Set(set);
-          newSet.add(id);
-          return newSet;
-        });
-      } else {
-        this.tabs.update(tabs => tabs.map(t => 
-          t.id === activeId ? { ...t, geneIds: Array.from(new Set([...t.geneIds, id])) } : t
-        ));
-      }
+      this.selectedGeneIds.update((set: Set<string>) => {
+        const newSet = new Set(set);
+        newSet.add(id);
+        return newSet;
+      });
     } else if (matchedIds.size > 1) {
       this.pendingBulkSelection.set(Array.from(matchedIds));
     }
@@ -634,12 +634,8 @@ export class ExplorerComponent implements OnInit {
   });
 
   displayedGenes = computed(() => {
-    const globalSelected = this.selectedGeneIds();
-    const activeId = this.activeTabId();
-    const activeTab = this.tabs().find(t => t.id === activeId);
-    const sourceIds = (activeId === 'default' || !activeTab) ? globalSelected : new Set(activeTab.geneIds);
-    
-    if (sourceIds.size === 0) return [];
+    const activeIds = this.activeTabGeneIds();
+    if (activeIds.size === 0) return [];
 
     const allProjs = this.projects();
     const log2fcCut = this.log2fcCutoff();
@@ -649,15 +645,12 @@ export class ExplorerComponent implements OnInit {
     const filteredProjIndices = new Set(this.filteredProjects().map(p => allProjs.indexOf(p)));
     const flippedIds = this.flippedProjectIds();
 
-    // 1. Get base genes from stable source (no mapping to keep objects stable)
-    const genes = this.allGenes().filter(g => sourceIds.has(g.uniprotId));
+    const genes = this.allGenes().filter(g => activeIds.has(g.uniprotId));
 
-    // 2. Apply search filter
     const termFiltered = filterTerm 
       ? genes.filter(g => g.gene.toLowerCase().includes(filterTerm) || g.uniprotId.toLowerCase().includes(filterTerm))
       : genes;
 
-    // 3. Apply significance filter (NON-DESTRUCTIVE - just for display)
     const filtered = termFiltered.filter(g => {
       const hasLog2fcCutoff = log2fcCut !== null && log2fcCut > 0;
       const hasConfCutoff = confCut !== null && confCut > 0;
@@ -665,10 +658,8 @@ export class ExplorerComponent implements OnInit {
 
       return g.log2fcs.some((val, idx) => {
         if (!filteredProjIndices.has(idx) || val === null) return false;
-        
         let v = val;
         if (flippedIds.has(allProjs[idx].projectId)) v *= -1;
-        
         const passesLog2fc = !hasLog2fcCutoff || Math.abs(v) >= log2fcCut!;
         const conf = g.confidences[idx];
         const passesConf = !hasConfCutoff || (conf !== null && conf >= confCut!);
@@ -676,7 +667,6 @@ export class ExplorerComponent implements OnInit {
       });
     });
 
-    // 4. Sort
     if (sortOrder === 'none') return filtered;
     return [...filtered].sort((a, b) => {
       const countA = this.countDirectionForGene(a, filteredProjIndices, log2fcCut, confCut, sortOrder);
@@ -723,9 +713,7 @@ export class ExplorerComponent implements OnInit {
       const projectMatch = sProjectIds.size === 0 || sProjectIds.has(p.projectId);
       let categorizationMatch = true;
       fState.forEach((selectedValues, key) => {
-        if (selectedValues.size > 0 && !selectedValues.has(p[key])) {
-          categorizationMatch = false;
-        }
+        if (selectedValues.size > 0 && !selectedValues.has(p[key])) categorizationMatch = false;
       });
       return projectMatch && categorizationMatch;
     });
@@ -777,9 +765,12 @@ export class ExplorerComponent implements OnInit {
 
   groupRankData = computed(() => {
     const groups = this.projectGroups();
+    const showOnlySelected = this.showOnlySelectedInRankPlot();
+    const globalIds = this.selectedGeneIds();
     const dataMap = new Map<string, RankItem[]>();
+    
     groups.forEach(group => {
-      dataMap.set(group.name, this.calculateRankData(group.projects));
+      dataMap.set(group.name, this.calculateRankData(group.projects, showOnlySelected ? globalIds : undefined));
     });
     return dataMap;
   });
@@ -794,12 +785,10 @@ export class ExplorerComponent implements OnInit {
     return dataMap;
   });
 
-  private calculateRankData(projects: ProjectMetadata[]): RankItem[] {
+  private calculateRankData(projects: ProjectMetadata[], limitToIds?: Set<string>): RankItem[] {
     const allGenes = this.allGenes();
     const allProjs = this.projects();
     const flipped = this.flippedProjectIds();
-    const selectedIds = this.selectedGeneIds();
-    const showOnlySelected = this.showOnlySelectedInRankPlot();
     const log2fcCut = this.log2fcCutoff();
     const confCut = this.confidenceCutoff();
     const projIndices = projects.map(p => allProjs.indexOf(p));
@@ -808,7 +797,7 @@ export class ExplorerComponent implements OnInit {
     const minTotal = Math.ceil(projIndices.length * (this.rankCutoff() / 100));
 
     return allGenes
-      .filter(g => !showOnlySelected || selectedIds.has(g.uniprotId))
+      .filter(g => !limitToIds || limitToIds.has(g.uniprotId))
       .map(g => {
         let increase = 0;
         let decrease = 0;
@@ -857,10 +846,8 @@ export class ExplorerComponent implements OnInit {
         let val = g.log2fcs[idx];
         const conf = g.confidences[idx];
         if (val === null || conf === null) return;
-        
         const passesConf = confCut === null || confCut <= 0 || (conf >= confCut);
         const passesLog2fc = log2fcCut === null || log2fcCut <= 0 || Math.abs(val) >= log2fcCut;
-        
         if (passesConf && passesLog2fc) {
           total++;
           if (flippedIds.has(projs[idx].projectId)) val *= -1;
@@ -875,18 +862,11 @@ export class ExplorerComponent implements OnInit {
   selectGenesFromPlot(uniprotIds: string[]) {
     if (uniprotIds.length === 1) {
       const id = uniprotIds[0];
-      const activeId = this.activeTabId();
-      if (activeId === 'default') {
-        this.selectedGeneIds.update(set => {
-          const newSet = new Set(set);
-          newSet.add(id);
-          return newSet;
-        });
-      } else {
-        this.tabs.update(tabs => tabs.map(t => 
-          t.id === activeId ? { ...t, geneIds: Array.from(new Set([...t.geneIds, id])) } : t
-        ));
-      }
+      this.selectedGeneIds.update(set => {
+        const newSet = new Set(set);
+        newSet.add(id);
+        return newSet;
+      });
     } else if (uniprotIds.length > 1) {
       this.pendingBulkSelection.set(uniprotIds);
     }
@@ -895,18 +875,11 @@ export class ExplorerComponent implements OnInit {
   confirmBulkAdd() {
     const ids = this.pendingBulkSelection();
     if (ids) {
-      const activeId = this.activeTabId();
-      if (activeId === 'default') {
-        this.selectedGeneIds.update(set => {
-          const newSet = new Set(set);
-          ids.forEach(id => newSet.add(id));
-          return newSet;
-        });
-      } else {
-        this.tabs.update(tabs => tabs.map(t => 
-          t.id === activeId ? { ...t, geneIds: Array.from(new Set([...t.geneIds, ...ids])) } : t
-        ));
-      }
+      this.selectedGeneIds.update(set => {
+        const newSet = new Set(set);
+        ids.forEach(id => newSet.add(id));
+        return newSet;
+      });
     }
     this.pendingBulkSelection.set(null);
   }
@@ -914,14 +887,7 @@ export class ExplorerComponent implements OnInit {
   confirmBulkReplace() {
     const ids = this.pendingBulkSelection();
     if (ids) {
-      const activeId = this.activeTabId();
-      if (activeId === 'default') {
-        this.selectedGeneIds.set(new Set([...ids]));
-      } else {
-        this.tabs.update(tabs => tabs.map(t => 
-          t.id === activeId ? { ...t, geneIds: [...ids] } : t
-        ));
-      }
+      this.selectedGeneIds.set(new Set([...ids]));
       this.geneFilterTerm.set('');
     }
     this.pendingBulkSelection.set(null);
@@ -999,14 +965,7 @@ export class ExplorerComponent implements OnInit {
   }
 
   clearAllProteins() {
-    const activeId = this.activeTabId();
-    if (activeId === 'default') {
-      this.selectedGeneIds.set(new Set());
-    } else {
-      this.tabs.update(tabs => tabs.map(t => 
-        t.id === activeId ? { ...t, geneIds: [] } : t
-      ));
-    }
+    this.selectedGeneIds.set(new Set());
   }
 
   resetToDefault() {
@@ -1095,35 +1054,21 @@ export class ExplorerComponent implements OnInit {
   }
 
   addGene(gene: GeneData) {
-    const activeId = this.activeTabId();
-    if (activeId === 'default') {
-      this.selectedGeneIds.update((set: Set<string>) => {
-        const newSet = new Set(set);
-        newSet.add(gene.uniprotId);
-        return newSet;
-      });
-    } else {
-      this.tabs.update(tabs => tabs.map(t => 
-        t.id === activeId ? { ...t, geneIds: Array.from(new Set([...t.geneIds, gene.uniprotId])) } : t
-      ));
-    }
+    this.selectedGeneIds.update((set: Set<string>) => {
+      const newSet = new Set(set);
+      newSet.add(gene.uniprotId);
+      return newSet;
+    });
     this.searchTerm.set('');
     this.highlightedIndex.set(-1);
   }
 
   removeGene(uniprotId: string) {
-    const activeId = this.activeTabId();
-    if (activeId === 'default') {
-      this.selectedGeneIds.update((set: Set<string>) => {
-        const newSet = new Set(set);
-        newSet.delete(uniprotId);
-        return newSet;
-      });
-    } else {
-      this.tabs.update(tabs => tabs.map(t => 
-        t.id === activeId ? { ...t, geneIds: t.geneIds.filter(id => id !== uniprotId) } : t
-      ));
-    }
+    this.selectedGeneIds.update((set: Set<string>) => {
+      const newSet = new Set(set);
+      newSet.delete(uniprotId);
+      return newSet;
+    });
   }
 
   trackByUniprotId(_index: number, gene: GeneData): string {
