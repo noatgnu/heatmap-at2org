@@ -25,6 +25,8 @@ export class HeatmapComponent {
 
   geneHovered = output<string | null>();
   geneSelected = output<string>();
+  exportCsv = output<void>();
+  exportTsv = output<void>();
 
   plotContainer = viewChild<ElementRef<HTMLElement>>('plotContainer');
   topScrollContainer = viewChild<ElementRef<HTMLElement>>('topScrollContainer');
