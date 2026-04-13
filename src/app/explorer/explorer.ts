@@ -93,7 +93,7 @@ export class ExplorerComponent implements OnInit {
     this.subsetConfidence.set(null);
   }
 
-  createCustomSubset(groupProjects: ProjectMetadata[], mode: 'intersection' | 'union') {
+  createCustomSubset(groupProjects: ProjectMetadata[], mode: 'intersection' | 'union' | 'exclusive') {
     const criteria = this.subsetCriteria();
     const activeProjects = groupProjects.filter(p => {
       const val = criteria.get(p.projectId);
@@ -108,7 +108,8 @@ export class ExplorerComponent implements OnInit {
     const flipped = this.flippedProjectIds();
 
     const subset = this.allGenes().filter(g => {
-      const matchResults = activeProjects.map(p => {
+      // 1. Check projects that ARE toggled (they must match direction and threshold)
+      const activeMatchResults = activeProjects.map(p => {
         const idx = allProjs.indexOf(p);
         let val = g.log2fcs[idx];
         const conf = g.confidences[idx];
@@ -116,21 +117,48 @@ export class ExplorerComponent implements OnInit {
         if (flipped.has(p.projectId)) val *= -1;
         
         const targetDir = criteria.get(p.projectId);
-        const passesLog2fc = Math.abs(val) >= log2fcCut;
-        const passesConf = conf >= confCut;
+        const passesThresholds = Math.abs(val) >= log2fcCut && conf >= confCut;
         const correctDirection = targetDir === 'up' ? val > 0 : val < 0;
-        return passesLog2fc && passesConf && correctDirection;
+        return passesThresholds && correctDirection;
       });
-      return mode === 'intersection' ? matchResults.every(r => r) : matchResults.some(r => r);
+
+      const passActive = mode === 'union' 
+        ? activeMatchResults.some(r => r) 
+        : activeMatchResults.every(r => r);
+
+      if (!passActive) return false;
+
+      // 2. For 'exclusive' mode, also check projects that ARE NOT toggled 
+      // (they must NOT meet the significance thresholds)
+      if (mode === 'exclusive') {
+        const nonActiveProjects = groupProjects.filter(p => !activeProjects.includes(p));
+        const isNotSignificantElsewhere = nonActiveProjects.every(p => {
+          const idx = allProjs.indexOf(p);
+          let val = g.log2fcs[idx];
+          const conf = g.confidences[idx];
+          if (val === null || conf === null) return true; // Truly no data is "not significant"
+          if (flipped.has(p.projectId)) val *= -1;
+          
+          const passesThresholds = Math.abs(val) >= log2fcCut && conf >= confCut;
+          return !passesThresholds;
+        });
+        return isNotSignificantElsewhere;
+      }
+
+      return true;
     });
 
     if (subset.length > 0) {
       const names = activeProjects.map(p => {
         const dir = criteria.get(p.projectId) === 'up' ? '↑' : '↓';
         return `${p.projectName}${dir}`;
-      }).join(mode === 'intersection' ? ' & ' : ' | ');
+      }).join(mode === 'union' ? ' | ' : ' & ');
+      
+      const prefix = mode === 'intersection' ? '∩' : (mode === 'exclusive' ? '!' : '∪');
+      const suffix = mode === 'exclusive' ? ' (Unique)' : '';
       const cutInfo = (this.subsetLog2fc() || this.subsetConfidence()) ? ` [FC:${log2fcCut}, C:${confCut}]` : '';
-      this.createTab(subset.map(g => g.uniprotId), `${mode === 'intersection' ? '∩' : '∪'} ${names}${cutInfo} (${subset.length})`);
+      
+      this.createTab(subset.map(g => g.uniprotId), `${prefix} ${names}${cutInfo}${suffix} (${subset.length})`);
     }
   }
 
