@@ -106,9 +106,9 @@ export class ExplorerComponent implements OnInit {
     
     const allProjs = this.projects();
     const flipped = this.flippedProjectIds();
+    const allVisibleProjects = this.filteredProjects();
 
     const subset = this.allGenes().filter(g => {
-      // 1. Check projects that ARE toggled (they must match direction and threshold)
       const activeMatchResults = activeProjects.map(p => {
         const idx = allProjs.indexOf(p);
         let val = g.log2fcs[idx];
@@ -128,22 +128,26 @@ export class ExplorerComponent implements OnInit {
 
       if (!passActive) return false;
 
-      // 2. For 'exclusive' mode, also check projects that ARE NOT toggled 
-      // (they must NOT meet the significance thresholds)
       if (mode === 'exclusive') {
-        const allVisibleProjects = this.filteredProjects();
         const nonActiveProjects = allVisibleProjects.filter(p => !activeProjects.find(ap => ap.projectId === p.projectId));
-        const isNotSignificantElsewhere = nonActiveProjects.every(p => {
+        const targetDirs = new Set(activeProjects.map(p => criteria.get(p.projectId)));
+
+        const matchesDirectionElsewhere = nonActiveProjects.some(p => {
           const idx = allProjs.indexOf(p);
           let val = g.log2fcs[idx];
           const conf = g.confidences[idx];
-          if (val === null || conf === null) return true; 
+          if (val === null || conf === null) return false;
           if (flipped.has(p.projectId)) val *= -1;
           
           const passesThresholds = Math.abs(val) >= log2fcCut && conf >= confCut;
-          return !passesThresholds;
+          if (!passesThresholds) return false;
+
+          if (val > 0 && targetDirs.has('up')) return true;
+          if (val < 0 && targetDirs.has('down')) return true;
+          return false;
         });
-        return isNotSignificantElsewhere;
+        
+        return !matchesDirectionElsewhere;
       }
 
       return true;
@@ -969,12 +973,10 @@ export class ExplorerComponent implements OnInit {
   }
 
   isDefaultFlip(p: ProjectMetadata): boolean {
+    const dsConfig = this.currentDatasetConfig();
+    const patterns = dsConfig?.defaultFlipPatterns || [];
     const name = p.projectName.toLowerCase();
-    const isMli2 = name.includes('dmso vs mli2') || name.includes('mli2 vs dmso') ||
-                   name.includes('dmso-mli2') || name.includes('mli2-dmso');
-    const isKo = name.includes('ko vs wt') || name.includes('wt vs ko') ||
-                 name.includes('ko-wt') || name.includes('wt-ko');
-    return isMli2 || isKo;
+    return patterns.some(pattern => name.includes(pattern.toLowerCase()));
   }
 
   drop(event: CdkDragDrop<string[]>) {
