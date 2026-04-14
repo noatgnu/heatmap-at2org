@@ -1,11 +1,13 @@
 import { Component, input, computed, signal, effect, untracked, ElementRef, viewChild, output, HostListener, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { PlotlyModule } from 'angular-plotly.js';
 import { GeneData, ProjectMetadata } from '../models';
 
 @Component({
   selector: 'app-heatmap',
   standalone: true,
-  imports: [PlotlyModule],
+  imports: [PlotlyModule, FormsModule, DragDropModule],
   templateUrl: './heatmap.html',
   styleUrl: './heatmap.scss'
 })
@@ -37,6 +39,49 @@ export class HeatmapComponent {
   stickyWidth = signal(0);
   stickyLeft = signal(0);
   toolbarOffset = signal(64);
+
+  manualGeneOrder = signal<string[]>([]);
+  showOrderModal = signal(false);
+  bulkOrderText = signal('');
+  selectedSortProjectId = signal<string>('');
+
+  orderedGenes = computed(() => {
+    const currentGenes = this.genes();
+    const order = this.manualGeneOrder();
+    if (order.length === 0) return currentGenes;
+    const orderMap = new Map(order.map((id, index) => [id, index]));
+    return [...currentGenes].sort((a, b) => {
+      const idxA = orderMap.has(a.uniprotId) ? orderMap.get(a.uniprotId)! : 1000000;
+      const idxB = orderMap.has(b.uniprotId) ? orderMap.get(b.uniprotId)! : 1000000;
+      return idxA - idxB;
+    });
+  });
+
+  orderByExperiment(projectId: string, direction: 'asc' | 'desc') {
+    const allProjs = this.allProjects();
+    const projIdx = allProjs.findIndex(p => p.projectId === projectId);
+    if (projIdx === -1) return;
+
+    const flippedIds = this.flippedProjectIds();
+    const isFlipped = flippedIds.has(projectId);
+
+    const sortedGenes = [...this.genes()].sort((a, b) => {
+      let valA = a.log2fcs[projIdx];
+      let valB = b.log2fcs[projIdx];
+
+      if (valA !== null && isFlipped) valA *= -1;
+      if (valB !== null && isFlipped) valB *= -1;
+
+      // Nulls go to the end
+      if (valA === null && valB === null) return 0;
+      if (valA === null) return 1;
+      if (valB === null) return -1;
+
+      return direction === 'asc' ? valA - valB : valB - valA;
+    });
+
+    this.manualGeneOrder.set(sortedGenes.map(g => g.uniprotId));
+  }
 
   @HostListener('window:scroll', [])
   onWindowScroll() {
@@ -161,7 +206,7 @@ export class HeatmapComponent {
   onHover(event: any) {
     if (event?.points?.[0]) {
       const p = event.points[0];
-      const genes = this.genes();
+      const genes = this.orderedGenes();
       const swapped = this.isSwapped();
       let geneIdx = -1;
       
@@ -184,7 +229,7 @@ export class HeatmapComponent {
   onClick(event: any) {
     if (event?.points?.[0]) {
       const p = event.points[0];
-      const genes = this.genes();
+      const genes = this.orderedGenes();
       const swapped = this.isSwapped();
       let geneIdx = -1;
       
@@ -208,7 +253,7 @@ export class HeatmapComponent {
   }
 
   graphData = computed(() => {
-    const genes = this.genes();
+    const genes = this.orderedGenes();
     const projs = this.projects();
     const allProjs = this.allProjects();
     const swapped = this.isSwapped();
@@ -542,4 +587,42 @@ export class HeatmapComponent {
       }
     };
   });
+
+  toggleOrderModal() {
+    this.showOrderModal.update(v => !v);
+    if (this.showOrderModal()) {
+      this.bulkOrderText.set(this.orderedGenes().map(g => g.gene).join('\n'));
+    }
+  }
+
+  dropGene(event: CdkDragDrop<GeneData[]>) {
+    const current = [...this.orderedGenes()];
+    moveItemInArray(current, event.previousIndex, event.currentIndex);
+    this.manualGeneOrder.set(current.map(g => g.uniprotId));
+  }
+
+  applyBulkOrder() {
+    const lines = this.bulkOrderText().split(/[\n,]/).map(s => s.trim().toLowerCase()).filter(s => s);
+    const allGenes = this.genes();
+    const newOrderIds: string[] = [];
+    lines.forEach(term => {
+      const match = allGenes.find(g => g.gene.toLowerCase() === term || g.uniprotId.toLowerCase() === term);
+      if (match && !newOrderIds.includes(match.uniprotId)) {
+        newOrderIds.push(match.uniprotId);
+      }
+    });
+    // Add remaining genes that weren't in the bulk list
+    allGenes.forEach(g => {
+      if (!newOrderIds.includes(g.uniprotId)) {
+        newOrderIds.push(g.uniprotId);
+      }
+    });
+    this.manualGeneOrder.set(newOrderIds);
+    this.showOrderModal.set(false);
+  }
+
+  clearManualOrder() {
+    this.manualGeneOrder.set([]);
+    this.showOrderModal.set(false);
+  }
 }

@@ -58,6 +58,7 @@ export class ExplorerComponent implements OnInit {
   selectedProjectIds = signal<Set<string>>(new Set());
   flippedProjectIds = signal<Set<string>>(new Set());
   manualProjectOrder = signal<ProjectMetadata[]>([]);
+  manualGeneOrder = signal<string[]>([]);
   isInitialized = signal(false);
 
   tabs = signal<HeatmapTab[]>([]);
@@ -232,7 +233,7 @@ export class ExplorerComponent implements OnInit {
   isHeatmapSwapped = signal<boolean>(false);
   log2fcCutoff = signal<number | null>(null);
   confidenceCutoff = signal<number | null>(null);
-  rankCutoff = signal<number>(10);
+  rankCutoff = signal<number>(0);
   geneSortOrder = signal<'none' | 'increase' | 'decrease'>('none');
   showOnlySelectedInRankPlot = signal<boolean>(false);
 
@@ -626,6 +627,9 @@ export class ExplorerComponent implements OnInit {
       if (!params['conf'] && dsConfig?.defaultConfidenceCutoff !== undefined) {
         this.confidenceCutoff.set(dsConfig.defaultConfidenceCutoff);
       }
+      if (!params['rankCutoff'] && dsConfig?.defaultRankCutoff !== undefined) {
+        this.rankCutoff.set(dsConfig.defaultRankCutoff);
+      }
 
       if (!params['sort']) {
         const categorization = this.config()?.categorization || [];
@@ -731,6 +735,15 @@ export class ExplorerComponent implements OnInit {
         return passesLog2fc && passesConf;
       });
     });
+
+    if (this.manualGeneOrder().length > 0) {
+      const orderMap = new Map(this.manualGeneOrder().map((id, index) => [id, index]));
+      return [...filtered].sort((a, b) => {
+        const idxA = orderMap.has(a.uniprotId) ? orderMap.get(a.uniprotId)! : 1000000;
+        const idxB = orderMap.has(b.uniprotId) ? orderMap.get(b.uniprotId)! : 1000000;
+        return idxA - idxB;
+      });
+    }
 
     if (sortOrder === 'none') return filtered;
     return [...filtered].sort((a, b) => {
@@ -1037,6 +1050,7 @@ export class ExplorerComponent implements OnInit {
     this.selectedProjectIds.set(new Set());
     this.log2fcCutoff.set(dsConfig?.defaultLog2fcCutoff ?? null);
     this.confidenceCutoff.set(dsConfig?.defaultConfidenceCutoff ?? null);
+    this.rankCutoff.set(dsConfig?.defaultRankCutoff ?? 0);
     this.geneSortOrder.set('none');
     const idsToFlip = new Set<string>();
     this.projects().forEach(p => {

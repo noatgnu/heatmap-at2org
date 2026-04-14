@@ -18,6 +18,7 @@ export interface DatasetConfig {
   defaultLog2fcCutoff?: number;
   defaultConfidenceCutoff?: number;
   defaultFlipPatterns?: string[];
+  defaultRankCutoff?: number;
 }
 export interface CategorizationRule {
   pattern: string;

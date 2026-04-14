@@ -12,6 +12,7 @@
       "defaultGenes": [],
       "defaultLog2fcCutoff": 0.58,
       "defaultConfidenceCutoff": 1.3,
+      "defaultRankCutoff": 0,
       "defaultFlipPatterns": [],
       "labelIncrease": "Positively regulated by LRRK2 <br> Protein level decreases upon inhibition",
       "labelDecrease": "Negatively regulated by LRRK2 <br> Protein level increases upon inhibition"
