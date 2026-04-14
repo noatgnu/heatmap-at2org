@@ -14,8 +14,8 @@
       "defaultConfidenceCutoff": 1.3,
       "defaultRankCutoff": 0,
       "defaultFlipPatterns": [],
-      "labelIncrease": "Positively regulated by LRRK2 <br> Protein level decreases upon inhibition",
-      "labelDecrease": "Negatively regulated by LRRK2 <br> Protein level increases upon inhibition"
+      "labelIncrease": "Increase with LRRK2 inhibition",
+      "labelDecrease": "Decrease with LRRK2 inhibition"
     }
   ],
   "categorization": [
