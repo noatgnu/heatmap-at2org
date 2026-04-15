@@ -11,7 +11,7 @@ export interface FilterPreset {
   createdAt: number;
 }
 const STORAGE_KEY = 'heatmap_presets';
-const MAX_PRESETS = 10;
+const MAX_PRESETS = 100;
 /**
  * Service for persisting filter presets to localStorage.
  */
@@ -103,21 +103,26 @@ export class PreferencesService {
     URL.revokeObjectURL(url);
   }
 
-  async importSession(file: File): Promise<void> {
+  async importSession(file: File): Promise<number> {
     try {
       const text = await file.text();
       const importedPresets = JSON.parse(text) as FilterPreset[];
       if (!Array.isArray(importedPresets)) {
         throw new Error('Invalid format');
       }
+      
+      let addedCount = 0;
       this.presetsSignal.update(existing => {
         const existingIds = new Set(existing.map(p => p.id));
         const newPresets = importedPresets.filter(p => !existingIds.has(p.id));
+        addedCount = newPresets.length;
         return [...newPresets, ...existing].slice(0, MAX_PRESETS);
       });
       this.saveToStorage();
+      return addedCount;
     } catch (e) {
       console.error('Session import failed', e);
+      throw e;
     }
   }
 }

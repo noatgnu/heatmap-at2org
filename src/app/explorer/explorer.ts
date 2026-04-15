@@ -1289,7 +1289,13 @@ export class ExplorerComponent implements OnInit {
   onImportSession(event: Event) {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
-      this.preferencesService.importSession(input.files[0]);
+      this.preferencesService.importSession(input.files[0]).then(count => {
+        alert(`Successfully imported ${count} new presets.`);
+        input.value = '';
+      }).catch(err => {
+        alert('Failed to import session. Please ensure the file is a valid JSON exported from this application.');
+        input.value = '';
+      });
     }
   }
 }
