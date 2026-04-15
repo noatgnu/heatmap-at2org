@@ -1275,4 +1275,15 @@ export class ExplorerComponent implements OnInit {
   setGeneSortOrder(order: 'none' | 'increase' | 'decrease') {
     this.geneSortOrder.set(order);
   }
+
+  exportSession() {
+    this.preferencesService.exportSession();
+  }
+
+  onImportSession(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      this.preferencesService.importSession(input.files[0]);
+    }
+  }
 }
