@@ -103,7 +103,7 @@ export class PreferencesService {
     URL.revokeObjectURL(url);
   }
 
-  async importSession(file: File): Promise<number> {
+  async importSession(file: File): Promise<FilterPreset[]> {
     try {
       const text = await file.text();
       const importedPresets = JSON.parse(text) as FilterPreset[];
@@ -111,15 +111,13 @@ export class PreferencesService {
         throw new Error('Invalid format');
       }
       
-      let addedCount = 0;
       this.presetsSignal.update(existing => {
         const existingIds = new Set(existing.map(p => p.id));
         const newPresets = importedPresets.filter(p => !existingIds.has(p.id));
-        addedCount = newPresets.length;
         return [...newPresets, ...existing].slice(0, MAX_PRESETS);
       });
       this.saveToStorage();
-      return addedCount;
+      return importedPresets;
     } catch (e) {
       console.error('Session import failed', e);
       throw e;

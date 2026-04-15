@@ -12,7 +12,7 @@ import { TabsComponent } from '../components/tabs/tabs';
 import { FilterChipsComponent, FilterChip } from '../components/filter-chips/filter-chips';
 import { CollapsibleSectionComponent } from '../components/collapsible-section/collapsible-section';
 import { FindGenePipe } from '../pipes/find-gene.pipe';
-import { GeneData, ProjectMetadata, RankItem, HeatmapTab } from '../models';
+import { GeneData, ProjectMetadata, RankItem, HeatmapTab, HeatmapSession } from '../models';
 import { DataService, AppConfig } from '../services/data.service';
 import { ExportService } from '../services/export.service';
 import { PreferencesService, FilterPreset, SortCriterion } from '../services/preferences';
@@ -174,10 +174,37 @@ export class ExplorerComponent implements OnInit {
     }
   }
 
-  createTab(geneIds: string[], name?: string, log2fcCut?: number | null, confCut?: number | null) {
+  private getFilterStateAsRecord(): Record<string, string[]> {
+    const record: Record<string, string[]> = {};
+    this.filterState().forEach((set, key) => {
+      if (set.size > 0) record[key] = Array.from(set);
+    });
+    return record;
+  }
+
+  createTab(
+    geneIds: string[], 
+    name?: string, 
+    log2fcCut?: number | null, 
+    confCut?: number | null,
+    viewState?: Partial<Omit<HeatmapTab, 'id' | 'name' | 'geneIds' | 'log2fcCutoff' | 'confidenceCutoff'>>
+  ) {
     const id = Math.random().toString(36).substring(2, 9);
     const tabName = name || `Subset (${geneIds.length})`;
-    const newTab: HeatmapTab = { id, name: tabName, geneIds, log2fcCutoff: log2fcCut, confidenceCutoff: confCut };
+    const newTab: HeatmapTab = {
+      id,
+      name: tabName,
+      geneIds,
+      log2fcCutoff: log2fcCut ?? this.log2fcCutoff(),
+      confidenceCutoff: confCut ?? this.confidenceCutoff(),
+      selectedProjectIds: viewState?.selectedProjectIds ?? Array.from(this.selectedProjectIds()),
+      filterState: viewState?.filterState ?? this.getFilterStateAsRecord(),
+      flippedProjectIds: viewState?.flippedProjectIds ?? Array.from(this.flippedProjectIds()),
+      sortStack: viewState?.sortStack ?? [...this.sortStack()],
+      manualProjectOrder: viewState?.manualProjectOrder ?? this.manualProjectOrder().map(p => p.projectId),
+      manualGeneOrder: viewState?.manualGeneOrder ?? [...this.manualGeneOrder()],
+      maskSubThreshold: viewState?.maskSubThreshold ?? this.maskSubThreshold()
+    };
     this.tabs.update(t => [...t, newTab]);
     this.switchTab(id);
   }
@@ -511,7 +538,20 @@ export class ExplorerComponent implements OnInit {
         this.selectedProjectIds.set(new Set());
         this.flippedProjectIds.set(new Set());
         this.manualProjectOrder.set([]);
-        this.tabs.set([{ id: 'default', name: 'Main Heatmap', geneIds: [] }]);
+        this.tabs.set([{ 
+          id: 'default', 
+          name: 'Main Heatmap', 
+          geneIds: [],
+          log2fcCutoff: null,
+          confidenceCutoff: null,
+          selectedProjectIds: [],
+          filterState: {},
+          flippedProjectIds: [],
+          sortStack: [],
+          manualProjectOrder: [],
+          manualGeneOrder: [],
+          maskSubThreshold: true
+        }]);
         this.activeTabId.set('default');
         this.log2fcCutoff.set(null);
         this.confidenceCutoff.set(null);
@@ -596,6 +636,79 @@ export class ExplorerComponent implements OnInit {
         queryParams,
         queryParamsHandling: 'merge',
         replaceUrl: true
+      });
+    });
+
+    // Effect: Switch Tab (Tab -> UI)
+    effect(() => {
+      const activeId = this.activeTabId();
+      const tab = untracked(this.tabs).find(t => t.id === activeId);
+      if (tab) {
+        untracked(() => {
+          this.selectedGeneIds.set(new Set(tab.geneIds || []));
+          this.log2fcCutoff.set(tab.log2fcCutoff ?? null);
+          this.confidenceCutoff.set(tab.confidenceCutoff ?? null);
+          this.selectedProjectIds.set(new Set(tab.selectedProjectIds || []));
+          
+          const newFilterState = new Map<string, Set<string>>();
+          if (tab.filterState) {
+            Object.entries(tab.filterState).forEach(([key, values]) => {
+              newFilterState.set(key, new Set(values));
+            });
+          }
+          this.filterState.set(newFilterState);
+          
+          this.flippedProjectIds.set(new Set(tab.flippedProjectIds || []));
+          this.sortStack.set((tab.sortStack || []) as SortCriterion[]);
+          
+          const allProjs = this.projects();
+          const projMap = new Map(allProjs.map(p => [p.projectId, p]));
+          const mProjs = (tab.manualProjectOrder || [])
+            .map(id => projMap.get(id))
+            .filter((p): p is ProjectMetadata => !!p);
+          this.manualProjectOrder.set(mProjs);
+          
+          this.manualGeneOrder.set(tab.manualGeneOrder || []);
+          this.maskSubThreshold.set(tab.maskSubThreshold ?? true);
+        });
+      }
+    });
+
+    // Effect: Update Active Tab (UI -> Tab)
+    effect(() => {
+      const activeId = this.activeTabId();
+      
+      // Watch all UI signals
+      const geneIds = Array.from(this.selectedGeneIds());
+      const log2fcCutoff = this.log2fcCutoff();
+      const confidenceCutoff = this.confidenceCutoff();
+      const selectedProjectIds = Array.from(this.selectedProjectIds());
+      const filterState = this.getFilterStateAsRecord();
+      const flippedProjectIds = Array.from(this.flippedProjectIds());
+      const sortStack = this.sortStack();
+      const manualProjectOrder = this.manualProjectOrder().map(p => p.projectId);
+      const manualGeneOrder = this.manualGeneOrder();
+      const maskSubThreshold = this.maskSubThreshold();
+
+      untracked(() => {
+        this.tabs.update(tabs => tabs.map(t => {
+          if (t.id === activeId) {
+            return {
+              ...t,
+              geneIds,
+              log2fcCutoff,
+              confidenceCutoff,
+              selectedProjectIds,
+              filterState,
+              flippedProjectIds,
+              sortStack,
+              manualProjectOrder,
+              manualGeneOrder,
+              maskSubThreshold
+            };
+          }
+          return t;
+        }));
       });
     });
   }
@@ -1283,19 +1396,72 @@ export class ExplorerComponent implements OnInit {
   }
 
   exportSession() {
-    this.preferencesService.exportSession();
+    const session: HeatmapSession = {
+      version: 1,
+      dataset: this.currentDataset(),
+      tabs: this.tabs(),
+      activeTabId: this.activeTabId(),
+      rankCutoff: this.rankCutoff(),
+      summaryDisplayMode: this.summaryDisplayMode(),
+      isHeatmapSwapped: this.isHeatmapSwapped(),
+      geneSortOrder: this.geneSortOrder(),
+      createdAt: Date.now()
+    };
+    const data = JSON.stringify(session, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `heatmap_session_${this.currentDataset()}_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   onImportSession(event: Event) {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
-      this.preferencesService.importSession(input.files[0]).then(count => {
-        alert(`Successfully imported ${count} new presets.`);
-        input.value = '';
-      }).catch(err => {
-        alert('Failed to import session. Please ensure the file is a valid JSON exported from this application.');
-        input.value = '';
-      });
+      const file = input.files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const content = e.target?.result as string;
+          const imported = JSON.parse(content);
+
+          if (imported.version && imported.tabs) {
+            this.loadSession(imported as HeatmapSession);
+          } else if (Array.isArray(imported)) {
+            const presets = imported as FilterPreset[];
+            presets.forEach(p => {
+              this.createTab(p.geneIds, p.name, null, null, {
+                filterState: p.filterState,
+                sortStack: p.sortStack,
+                flippedProjectIds: p.flippedProjectIds
+              });
+            });
+          }
+        } catch (err) {
+          console.error('Import failed', err);
+          alert('Failed to import session. Please ensure the file is a valid JSON.');
+        }
+      };
+      reader.readAsText(file);
+      input.value = '';
+    }
+  }
+
+  loadSession(session: HeatmapSession) {
+    this.tabs.set(session.tabs);
+    const tabExists = session.tabs.some(t => t.id === session.activeTabId);
+    this.activeTabId.set(tabExists ? session.activeTabId : (session.tabs[0]?.id ?? 'default'));
+    this.rankCutoff.set(session.rankCutoff ?? 0);
+    if (session.summaryDisplayMode !== undefined) {
+      this.summaryDisplayMode.set(session.summaryDisplayMode);
+    }
+    if (session.isHeatmapSwapped !== undefined) {
+      this.isHeatmapSwapped.set(session.isHeatmapSwapped);
+    }
+    if (session.geneSortOrder !== undefined) {
+      this.geneSortOrder.set(session.geneSortOrder);
     }
   }
 }
