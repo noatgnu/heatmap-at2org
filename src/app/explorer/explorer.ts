@@ -59,6 +59,7 @@ export class ExplorerComponent implements OnInit {
   flippedProjectIds = signal<Set<string>>(new Set());
   manualProjectOrder = signal<ProjectMetadata[]>([]);
   manualGeneOrder = signal<string[]>([]);
+  activeSubsetGroupId = signal<string | null>(null);
   isInitialized = signal(false);
 
   tabs = signal<HeatmapTab[]>([]);
@@ -68,6 +69,11 @@ export class ExplorerComponent implements OnInit {
   subsetLog2fc = signal<number | null>(null);
   subsetConfidence = signal<number | null>(null);
   isSwitching = signal(false);
+
+  toggleSubsetBuilder(groupId: string, event: Event) {
+    event.stopPropagation();
+    this.activeSubsetGroupId.update(current => current === groupId ? null : groupId);
+  }
 
   selectionHistory = computed(() => this.historyService.getHistoryForDataset(this.currentDataset()));
 
