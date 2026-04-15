@@ -15,7 +15,7 @@ import { FindGenePipe } from '../pipes/find-gene.pipe';
 import { GeneData, ProjectMetadata, RankItem, HeatmapTab, HeatmapSession } from '../models';
 import { DataService, AppConfig } from '../services/data.service';
 import { ExportService } from '../services/export.service';
-import { PreferencesService, FilterPreset, SortCriterion } from '../services/preferences';
+import { FilterPreset, SortCriterion } from '../services/preferences';
 import { HistoryService, SelectionHistoryEntry } from '../services/history.service';
 
 @Component({
@@ -28,7 +28,7 @@ import { HistoryService, SelectionHistoryEntry } from '../services/history.servi
 export class ExplorerComponent implements OnInit {
   private dataService = inject(DataService);
   private exportService = inject(ExportService);
-  private preferencesService = inject(PreferencesService);
+
   protected historyService = inject(HistoryService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -501,9 +501,6 @@ export class ExplorerComponent implements OnInit {
   });
 
   sortStack = signal<SortCriterion[]>([]);
-  showPresetInput = signal(false);
-  presetName = signal('');
-  currentPresets = computed(() => this.preferencesService.getPresetsForDataset(this.currentDataset()));
   hasMultipleDatasets = computed(() => (this.config()?.datasets?.length || 0) > 1);
   currentDatasetConfig = computed(() => this.config()?.datasets.find(d => d.id === this.currentDataset()));
 
@@ -1325,44 +1322,9 @@ export class ExplorerComponent implements OnInit {
     }
   }
 
-  togglePresetInput() {
-    this.showPresetInput.update(v => !v);
-    if (!this.showPresetInput()) {
-      this.presetName.set('');
-    }
-  }
-
-  saveCurrentPreset() {
-    const name = this.presetName().trim();
-    if (!name) return;
-    this.preferencesService.savePreset(
-      name,
-      this.currentDataset(),
-      this.selectedGeneIds(),
-      this.filterState(),
-      this.sortStack(),
-      this.flippedProjectIds()
-    );
-    this.presetName.set('');
-    this.showPresetInput.set(false);
-  }
-
-  loadPreset(preset: FilterPreset) {
-    this.selectedGeneIds.set(new Set(preset.geneIds));
-    this.filterState.set(new Map(
-      Object.entries(preset.filterState).map(([key, val]) => [key, new Set(val)])
-    ));
-    this.sortStack.set([...preset.sortStack]);
-    this.flippedProjectIds.set(new Set(preset.flippedProjectIds));
-  }
-
   loadHistoryEntry(entry: SelectionHistoryEntry) {
     this.selectedGeneIds.set(new Set(entry.geneIds));
     this.showHistoryDropdown.set(false);
-  }
-
-  deletePreset(preset: FilterPreset) {
-    this.preferencesService.deletePreset(preset.id);
   }
 
   setLog2fcCutoff(value: string) {
